@@ -2,6 +2,9 @@
 
 This is a [Babel](https://babeljs.io/) plugin for static and runtime type checking using [flow types](http://flowtype.org/) annotations.
 
+> NOTE: Because of an upcoming change in babel's plugin API this does not currently work with
+> the latest *published* version on npm. You'll need to use the bleeding edge version of babel from
+> github to try this until the fix for https://github.com/babel/babel/issues/1363 is released.
 
 # What?
 
