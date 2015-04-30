@@ -21,15 +21,24 @@ export default function buildPlugin (babel: Object): Object {
   // the configuration for the transformer
   return {
     Function (node: Object) {
-      const argumentGuards = createArgumentGuards(node);
-      const returnTypes = extractReturnTypes(node);
-
-      if (argumentGuards.length > 0 || returnTypes.length > 0) {
-        this.traverse(visitors, {
-          subject: node,
-          argumentGuards: argumentGuards,
-          returnTypes: returnTypes
-        });
+      try {
+        const argumentGuards = createArgumentGuards(node);
+        const returnTypes = extractReturnTypes(node);
+        if (argumentGuards.length > 0 || returnTypes.length > 0) {
+          this.traverse(visitors, {
+            subject: node,
+            argumentGuards: argumentGuards,
+            returnTypes: returnTypes
+          });
+        }
+      }
+      catch (e) {
+        if (e instanceof SyntaxError) {
+          throw this.errorWithNode(e.message);
+        }
+        else {
+          throw e;
+        }
       }
     }
   };
@@ -82,7 +91,10 @@ export default function buildPlugin (babel: Object): Object {
   function createArgumentGuards (node: Object): Array<Object|string> {
     return node.params.reduce(
       (guards, param) => {
-        if (param.typeAnnotation) {
+        if (param.type === "AssignmentPattern" && param.left.typeAnnotation) {
+          guards.push(createDefaultArgumentGuard(param, extractAnnotationTypes(param.left.typeAnnotation)));
+        }
+        else if (param.typeAnnotation) {
           guards.push(createArgumentGuard(param, extractAnnotationTypes(param.typeAnnotation)));
         }
         return guards;
@@ -105,6 +117,18 @@ export default function buildPlugin (babel: Object): Object {
         )
       )
     );
+  }
+
+
+  /**
+   * Create a guard for a default paramter.
+   */
+  function createDefaultArgumentGuard (param: Object, types: Array<Object|string>): Object {
+    const validated = staticallyVerifyDefaultArgumentType(param, types);
+    if (validated === TYPE_INVALID) {
+      throw new SyntaxError(`Default value for argument '${param.left.name}' violates contract.`);
+    }
+    return createArgumentGuard(param.left, types);
   }
 
 
@@ -205,45 +229,61 @@ export default function buildPlugin (babel: Object): Object {
 
 
   /**
+   * Attempt to statically verify that the default value of an argument matches the annotated type.
+   */
+  function staticallyVerifyDefaultArgumentType (node: Object, types: Array<Object|string>) {
+    return staticallyVerifyType(node.right, types);
+  }
+
+
+  /**
    * Attempt to statically verify the return type of a node.
    */
-  function staticallyVerifyReturnType (node: Object, types:Array): number {
-    if (isNodeNully(node.argument)) {
+  function staticallyVerifyReturnType (node: Object, types: Array<Object|string>): number {
+    return staticallyVerifyType(node.argument);
+  }
+
+
+  /**
+   * Statically verify that the given node is one of the given types.
+   */
+  function staticallyVerifyType (node: Object, types: Array<Object|string>): number {
+    if (isNodeNully(node)) {
       return (types.indexOf("null") > -1 || types.indexOf("undefined") > -1)
              ? TYPE_VALID
              : TYPE_INVALID;
     }
-    else if (node.argument.type === "Literal") {
-      if (node.argument.regex) {
+    else if (node.type === "Literal") {
+      if (node.regex) {
         return (types.indexOf("object") > -1 || types.some(identifierMatcher("RegExp")))
                ? TYPE_VALID
                : TYPE_INVALID;
       }
       else {
-        return types.indexOf(typeof node.argument.value) > -1
+        return types.indexOf(typeof node.value) > -1
                ? TYPE_VALID
                : TYPE_INVALID;
       }
     }
-    else if (node.argument.type === "ObjectExpression") {
+    else if (node.type === "ObjectExpression") {
       return types.indexOf("object") > -1
              ? TYPE_VALID
              : TYPE_INVALID;
     }
-    else if (node.argument.type === "ArrayExpression") {
+    else if (node.type === "ArrayExpression") {
       return (types.indexOf("array") > -1 || types.indexOf("object") > -1)
              ? TYPE_VALID
              : TYPE_INVALID;
     }
-    else if (t.isFunction(node.argument)) {
+    else if (t.isFunction(node)) {
       return (types.indexOf("function") > -1 || types.indexOf("object") > -1)
              ? TYPE_VALID
              : TYPE_INVALID;
     }
-    else if (node.argument.type === 'NewExpression' && node.argument.callee.type === 'Identifier') {
+    else if (node.type === 'NewExpression' && node.callee.type === 'Identifier') {
       // this is of the form `return new SomeClass()`
       // @fixme it should be possible to do this with non computed member expressions too
-      return (types.indexOf("object") > -1 || types.some(identifierMatcher(node.argument.callee.name)))
+      return (types.indexOf("object") > -1 || types.some(identifierMatcher(node.callee.name)))
              ? TYPE_VALID
              : TYPE_UNKNOWN;
     }

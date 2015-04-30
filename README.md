@@ -36,6 +36,10 @@ function foo (): boolean {
     return false;
   }
 }
+
+function bar (input: string = 123): string { // <-- SyntaxError: default value is not string
+  return input + "456";
+}
 ```
 
 In cases where typecheck can statically verify that the return value is of the correct type, no type checks will be inserted, for instance:
