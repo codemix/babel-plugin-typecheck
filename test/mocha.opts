@@ -3,4 +3,3 @@
 --harmony
 --require should
 --require ./test-polyfill.js
-test

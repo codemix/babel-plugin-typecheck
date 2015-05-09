@@ -1,10 +1,6 @@
 # Babel Typecheck
 
-This is a [Babel](https://babeljs.io/) plugin for static and runtime type checking using [flow types](http://flowtype.org/) annotations.
-
-> NOTE: Because of an upcoming change in babel's plugin API this does not currently work with
-> the latest *published* version on npm. You'll need to use the bleeding edge version of babel from
-> github to try this until the fix for https://github.com/babel/babel/issues/1363 is released.
+This is a [Babel](https://babeljs.io/) plugin for static and runtime type checking using [flow type](http://flowtype.org/) annotations.
 
 # What?
 
@@ -65,11 +61,10 @@ function createUser (): User {
   return new User(); // <-- no typecheck required
 }
 ```
-This is currently quite limited though, as the plugin can only statically infer the types of literals and very simple expressions, it can't (yet) verify e.g. the type of a variable or result of a function call. In those cases a runtime type check is required:
+This is currently quite limited though, as the plugin can only statically infer the types of literals and very simple expressions, it can't (yet) statically verify e.g. the result of a function call. In those cases a runtime type check is required:
 ```js
 function createUser (): User {
-  const user = new User();
-  return user; // <-- produces runtime typecheck
+  return User.create(); // <-- produces runtime typecheck
 }
 ```
 

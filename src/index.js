@@ -1,9 +1,7 @@
-export const key = "typecheck";
-
 /**
  * # Typecheck Transformer
  */
-export default function buildPlugin (babel: Object): Object {
+export default function build (babel: Object): Object {
   const {Transformer, types: t, traverse, Scope} = babel;
 
   // constants used when statically verifying types
@@ -17,15 +15,28 @@ export default function buildPlugin (babel: Object): Object {
     exit: exitNode
   };
 
+  /**
+   * Binary Operators that can only produce boolean results.
+   */
+  const BOOLEAN_BINARY_OPERATORS = [
+    '==',
+    '===',
+    '>=',
+    '<=',
+    '>',
+    '<',
+    'instanceof'
+  ];
 
   // the configuration for the transformer
-  return {
-    Function (node: Object) {
+  return new Transformer("typecheck", {
+    Function (node: Object, parent: Object, scope: Scope) {
       try {
         const argumentGuards = createArgumentGuards(node);
         const returnTypes = extractReturnTypes(node);
         if (argumentGuards.length > 0 || returnTypes.length > 0) {
           this.traverse(visitors, {
+            constants: scope.getAllBindingsOfKind("const"),
             subject: node,
             argumentGuards: argumentGuards,
             returnTypes: returnTypes
@@ -41,7 +52,7 @@ export default function buildPlugin (babel: Object): Object {
         }
       }
     }
-  };
+  });
 
 
   /**
@@ -59,6 +70,9 @@ export default function buildPlugin (babel: Object): Object {
         if (annotation.id.name === 'mixed') {
           return ["mixed"];
         }
+        else if (annotation.id.name === 'any') {
+          return ["any"];
+        }
         else if (annotation.id.name === 'Function') {
           return ["function"];
         }
@@ -69,6 +83,8 @@ export default function buildPlugin (babel: Object): Object {
           return ["array"];
         }
         return [annotation.id];
+      case "ObjectTypeAnnotation":
+        return ["object"];
       case "StringTypeAnnotation":
         return ["string"];
       case "BooleanTypeAnnotation":
@@ -100,14 +116,18 @@ export default function buildPlugin (babel: Object): Object {
         return guards;
       },
       []
-    );
+    )
+    .filter(identity); // remove blank nodes
   }
 
 
   /**
    * Create a guard for an individual argument.
    */
-  function createArgumentGuard (param: Object, types: Array<Object|string>): Object {
+  function createArgumentGuard (param: Object, types: Array<Object|string>): ?Object {
+    if (types.indexOf('any') > -1 || types.indexOf('mixed') > -1) {
+      return null;
+    }
     return t.ifStatement(
       createIfTest(param, types),
       t.throwStatement(
@@ -204,11 +224,12 @@ export default function buildPlugin (babel: Object): Object {
    */
   function extractReturnTypes (node: Object): Array<Object|string> {
     if (node.returnType) {
-      return extractAnnotationTypes(node.returnType);
+      const types = extractAnnotationTypes(node.returnType);
+      if (types.indexOf('any') === -1 && types.indexOf('mixed') === -1) {
+        return types;
+      }
     }
-    else {
-      return [];
-    }
+    return [];
   }
 
 
@@ -231,7 +252,7 @@ export default function buildPlugin (babel: Object): Object {
   /**
    * Attempt to statically verify that the default value of an argument matches the annotated type.
    */
-  function staticallyVerifyDefaultArgumentType (node: Object, types: Array<Object|string>) {
+  function staticallyVerifyDefaultArgumentType (node: Object, types: Array<Object|string>): number|Object {
     return staticallyVerifyType(node.right, types);
   }
 
@@ -239,15 +260,15 @@ export default function buildPlugin (babel: Object): Object {
   /**
    * Attempt to statically verify the return type of a node.
    */
-  function staticallyVerifyReturnType (node: Object, types: Array<Object|string>): number {
-    return staticallyVerifyType(node.argument);
+  function staticallyVerifyReturnType (node: Object, types: Array<Object|string>): number|Object {
+    return staticallyVerifyType(node.argument, types);
   }
 
 
   /**
    * Statically verify that the given node is one of the given types.
    */
-  function staticallyVerifyType (node: Object, types: Array<Object|string>): number {
+  function staticallyVerifyType (node: Object, types: Array<Object|string>): number|Object {
     if (isNodeNully(node)) {
       return (types.indexOf("null") > -1 || types.indexOf("undefined") > -1)
              ? TYPE_VALID
@@ -286,6 +307,15 @@ export default function buildPlugin (babel: Object): Object {
       return (types.indexOf("object") > -1 || types.some(identifierMatcher(node.callee.name)))
              ? TYPE_VALID
              : TYPE_UNKNOWN;
+    }
+    else if (isBooleanExpression(node)) {
+      return types.indexOf('boolean') > -1
+             ? TYPE_VALID
+             : TYPE_INVALID;
+    }
+    else if (node.type === 'Identifier') {
+      // check the scope to see if this is a `const` value
+      return node;
     }
     else {
       return TYPE_UNKNOWN; // will produce a runtime type check
@@ -359,7 +389,14 @@ export default function buildPlugin (babel: Object): Object {
       // we only care about return statements.
       return;
     }
-    const validated = staticallyVerifyReturnType(node, state.returnTypes);
+    let validated = staticallyVerifyReturnType(node, state.returnTypes);
+    if (typeof validated === 'object' && state.constants[validated.name]) {
+      // the return value is a constant, let's see if we can infer the type
+      const constant = state.constants[validated.name];
+      const declarator = constant.path.parent.declarations[constant.path.key];
+      validated = staticallyVerifyType(declarator.init, state.returnTypes);
+    }
+
     if (validated === TYPE_INVALID) {
       throw this.errorWithNode(`Function ${state.subject.id ? `'${state.subject.id.name}' ` : ''}return value violates contract.`);
     }
@@ -371,6 +408,22 @@ export default function buildPlugin (babel: Object): Object {
       const ref = createReferenceTo(this, node.argument, scope);
       this.insertBefore(createReturnTypeGuard(ref, node, scope, state));
       return t.returnStatement(ref);
+    }
+  }
+
+
+  /**
+   * Determine whether the given node can produce purely boolean results.
+   */
+  function isBooleanExpression (node: Object) {
+    if (node.type === 'BinaryExpression' && BOOLEAN_BINARY_OPERATORS.indexOf(node.operator) > -1) {
+      return true;
+    }
+    else if (node.type === 'LogicalExpression') {
+      return isBooleanExpression(node.left) && isBooleanExpression(node.right);
+    }
+    else {
+      return false;
     }
   }
 
@@ -408,5 +461,13 @@ export default function buildPlugin (babel: Object): Object {
     else {
       return false;
     }
+  }
+
+
+  /**
+   * A function that returns its first argument, useful when filtering.
+   */
+  function identity (input: any): any {
+    return input;
   }
 }
