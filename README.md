@@ -2,6 +2,8 @@
 
 This is a [Babel](https://babeljs.io/) plugin for static and runtime type checking using [flow type](http://flowtype.org/) annotations.
 
+[![Build Status](https://travis-ci.org/codemix/babel-plugin-typecheck.svg)](https://travis-ci.org/codemix/babel-plugin-typecheck)
+
 # What?
 
 Turns code like this:
