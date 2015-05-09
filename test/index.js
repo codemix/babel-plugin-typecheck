@@ -4,10 +4,11 @@ import {parse, transform, traverse} from 'babel';
 
 describe('Typecheck', function () {
 
-  ok("binary-return-value");
-  staticFail("bad-binary-return-value");
-
+  ok("conditional-return-value");
   ok("any-return-value");
+  ok("callexpr-return-value");
+  ok("binary-return-value");
+  failStatic("bad-binary-return-value");
   ok("mixed-return-value");
   ok("string-arguments", "hello world");
   ok("multiple-arguments", "hello world", 123);
@@ -18,9 +19,9 @@ describe('Typecheck', function () {
   fail("string-arguments");
   fail("string-arguments", 123);
 
-  staticFail("bad-const-tracking");
-  staticFail("bad-return-value");
-  staticFail("bad-default-arguments");
+  failStatic("bad-const-tracking");
+  failStatic("bad-return-value");
+  failStatic("bad-default-arguments");
 
 
 });
@@ -33,6 +34,7 @@ function load (basename) {
   const transformed = transform(source, {
     plugins: [Plugin]
   });
+  // console.log(transformed.code);
   const context = {
     exports: {}
   };
@@ -64,7 +66,7 @@ function fail (basename, ...args) {
 }
 
 
-function staticFail (basename, ...args) {
+function failStatic (basename, ...args) {
   it(`should refuse to load '${basename}'`, function () {
     let failed = false;
     try {

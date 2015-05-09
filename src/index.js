@@ -385,8 +385,8 @@ export default function build (babel: Object): Object {
    * Invoked when leaving a visited AST node.
    */
   function exitNode (node: Object, parent: Object, scope: Scope, state: Object) {
-    if (node.type !== 'ReturnStatement') {
-      // we only care about return statements.
+    if (node.type !== 'ReturnStatement' || state.returnTypes.length === 0) {
+      // we only care about typed return statements.
       return;
     }
     let validated = staticallyVerifyReturnType(node, state.returnTypes);
