@@ -26,6 +26,7 @@ describe('Typecheck', function () {
   ok("class-method");
 
   ok("bug-7-class-support");
+  ok("bug-8-class-support");
 });
 
 
