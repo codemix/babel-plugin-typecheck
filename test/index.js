@@ -16,8 +16,8 @@ describe('Typecheck', function () {
   ok("const-tracking-with-new");
   ok("const-tracking-with-new-extended");
 
-  fail("string-arguments");
-  fail("string-arguments", 123);
+  failWith("Value of argument 'input' violates contract, expected string got undefined", "string-arguments");
+  failWith("Value of argument 'input' violates contract, expected string got number", "string-arguments", 123);
 
   failStatic("bad-const-tracking");
   failStatic("bad-return-value");
@@ -25,8 +25,16 @@ describe('Typecheck', function () {
 
   ok("class-method");
 
+  ok("poly-args", "hello world", /a/);
+  ok("poly-args", ["hello world"], /b/);
+  failWith("Value of argument 'arg' violates contract, expected string or array got number", "poly-args", 123);
+  failWith("Value of argument 'fn' violates contract, expected function or RegExp got number", "poly-args", "hello", 123);
+
   ok("bug-7-class-support");
   ok("bug-8-class-support");
+
+  failWith("Function 'demo' return value violates contract, expected number or string got Object", "conditional-return-value", {a: 123});
+
 });
 
 
@@ -60,9 +68,30 @@ function fail (basename, ...args) {
     }
     catch (e) {
       failed = true;
+      console.log(e);
     }
     if (!failed) {
       throw new Error(`Test '${basename}' should have failed but did not.`);
+    }
+  });
+}
+
+function failWith (errorMessage, basename, ...args) {
+  it(`should not load '${basename}'`, function () {
+    let failed = false;
+    let message;
+    try {
+      load(basename)(...args);
+    }
+    catch (e) {
+      failed = true;
+      message = e.message;
+    }
+    if (!failed) {
+      throw new Error(`Test '${basename}' should have failed but did not.`);
+    }
+    if (message !== errorMessage) {
+      throw new Error(`Test '${basename}' failed with ${message} instead of ${errorMessage}.`);
     }
   });
 }

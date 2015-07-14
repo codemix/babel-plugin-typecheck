@@ -131,7 +131,10 @@ export default function build (babel: Object): Object {
       t.throwStatement(
         t.newExpression(
           t.identifier("TypeError"),
-          [t.literal(`Value of argument '${param.name}' violates contract.`)]
+          [t.binaryExpression("+",
+            t.literal(`Value of argument '${param.name}' violates contract, expected ${createTypeNameList(types)} got `),
+            createReadableTypeName(param)
+          )]
         )
       )
     );
@@ -144,7 +147,7 @@ export default function build (babel: Object): Object {
   function createDefaultArgumentGuard (param: Object, types: Array<Object|string>): Object {
     const validated = staticallyVerifyDefaultArgumentType(param, types);
     if (validated === TYPE_INVALID) {
-      throw new SyntaxError(`Default value for argument '${param.left.name}' violates contract.`);
+      throw new SyntaxError(`Default value for argument '${param.left.name}' violates contract, expected ${createTypeNameList(types)}`);
     }
     return createArgumentGuard(param.left, types);
   }
@@ -167,6 +170,60 @@ export default function build (babel: Object): Object {
     }, null);
   }
 
+  /**
+   * Turn a list of types into an english sentence.
+   */
+  function createTypeNameList (types: Array<string>): string {
+    const names = types.reduce((names, type) => {
+      if (typeof type === 'object') {
+        names.push(type.name);
+      }
+      else {
+        names.push(type);
+      }
+      return names;
+    }, []);
+    if (names.length < 2) {
+      return names[0] || 'any';
+    }
+    else {
+      const last = names.pop();
+      return `${names.join(', ')} or ${last}`;
+    }
+  }
+
+  /**
+   * Creates an expression which can return a readable type name for an identifier.
+   */
+  function createReadableTypeName (identifier: Object): Object {
+    return t.conditionalExpression(
+      t.binaryExpression(
+        "===",
+        identifier,
+        t.literal(null)
+      ),
+      t.literal("null"),
+      t.conditionalExpression(
+        t.logicalExpression(
+          "&&",
+          t.binaryExpression(
+            "instanceof",
+            identifier,
+            t.identifier("Object")
+          ),
+          t.memberExpression(
+            identifier,
+            t.identifier("constructor")
+          )
+        ),
+        t.memberExpression(
+          t.memberExpression(identifier, t.identifier("constructor")),
+          t.identifier("name")
+        ),
+        t.unaryExpression("typeof", identifier)
+      )
+    );
+  }
 
   /**
    * Create an expression that can validate that the given
@@ -240,7 +297,10 @@ export default function build (babel: Object): Object {
       t.throwStatement(
         t.newExpression(
           t.identifier("TypeError"),
-          [t.literal(`Function ${state.subject.id ? `'${state.subject.id.name}' ` : ''}return value violates contract.`)]
+          [t.binaryExpression("+",
+            t.literal(`Function ${state.subject.id ? `'${state.subject.id.name}' ` : ''}return value violates contract, expected ${createTypeNameList(state.returnTypes)} got `),
+            createReadableTypeName(ref)
+          )]
         )
       )
     );
@@ -396,7 +456,7 @@ export default function build (babel: Object): Object {
     }
 
     if (validated === TYPE_INVALID) {
-      throw this.errorWithNode(`Function ${state.subject.id ? `'${state.subject.id.name}' ` : ''}return value violates contract.`);
+      throw this.errorWithNode(`Function ${state.subject.id ? `'${state.subject.id.name}' ` : ''}return value violates contract, expected ${createTypeNameList(state.returnTypes)}.`);
     }
     else if (validated === TYPE_VALID) {
       // no need to guard, has been statically verified.

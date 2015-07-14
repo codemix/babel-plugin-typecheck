@@ -1,5 +1,8 @@
-export default function demo (): number|string {
-  if (Math.random() > 0.3) {
+export default function demo (opt: ?Object): number|string {
+  if (opt) {
+    return opt;
+  }
+  else if (Math.random() > 0.3) {
     return stringGen();
   }
   else {
