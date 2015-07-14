@@ -24,6 +24,8 @@ describe('Typecheck', function () {
   failStatic("bad-default-arguments");
 
   ok("class-method");
+
+  ok("bug-7-class-support");
 });
 
 
