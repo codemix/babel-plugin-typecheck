@@ -28,7 +28,6 @@ export default function build (babel: Object): Object {
     'instanceof'
   ];
 
-  // the configuration for the transformer
   return new Transformer("typecheck", {
     Function (node: Object, parent: Object, scope: Scope) {
       try {
@@ -66,11 +65,10 @@ export default function build (babel: Object): Object {
         return annotation.types.reduce((types, type) => union(types, extractAnnotationTypes(type)), []);
       case "NullableTypeAnnotation":
         return union(["null"], extractAnnotationTypes(annotation.typeAnnotation));
+      case "MixedTypeAnnotation":
+        return ["mixed"];
       case "GenericTypeAnnotation":
-        if (annotation.id.name === 'mixed') {
-          return ["mixed"];
-        }
-        else if (annotation.id.name === 'any') {
+        if (annotation.id.name === 'any') {
           return ["any"];
         }
         else if (annotation.id.name === 'Function') {
@@ -340,7 +338,7 @@ export default function build (babel: Object): Object {
       return value;
     }
     else {
-      const id = scope.generateUidBasedOnNode(value);
+      const id = scope.generateUidIdentifierBasedOnNode(value);
       scope.push({id: id});
       traverser.insertBefore(t.expressionStatement(
         t.assignmentExpression(

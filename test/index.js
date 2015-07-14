@@ -23,7 +23,7 @@ describe('Typecheck', function () {
   failStatic("bad-return-value");
   failStatic("bad-default-arguments");
 
-
+  ok("class-method");
 });
 
 
@@ -34,7 +34,6 @@ function load (basename) {
   const transformed = transform(source, {
     plugins: [Plugin]
   });
-  // console.log(transformed.code);
   const context = {
     exports: {}
   };
