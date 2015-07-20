@@ -82,7 +82,12 @@ export default function build (babel: Object): Object {
         }
         return [annotation.id];
       case "ObjectTypeAnnotation":
-        return ["object"];
+        if (annotation.properties.length > 0) {
+          return [annotation];
+        }
+        else {
+          return ["object"];
+        }
       case "StringTypeAnnotation":
         return ["string"];
       case "BooleanTypeAnnotation":
@@ -173,22 +178,44 @@ export default function build (babel: Object): Object {
   /**
    * Turn a list of types into an english sentence.
    */
-  function createTypeNameList (types: Array<string>): string {
-    const names = types.reduce((names, type) => {
+  function createTypeNameList (types: Array<string|Object>, separator: string = "or"): string {
+    return joinSentence(types.reduce((names, type) => {
       if (typeof type === 'object') {
-        names.push(type.name);
+        if (type.type === 'ObjectTypeProperty') {
+          return [type.key.name];
+        }
+        else if (type.type === 'ObjectTypeAnnotation') {
+          if (type.properties.length > 1) {
+            names.push(`Object with properties ${joinSentence(type.properties.map(item => item.key.name), 'and')}`)
+          }
+          else if (type.properties.length === 1) {
+            names.push(`Object with a ${type.properties[0].key.name} property`);
+          }
+          else {
+            names.push('Object with no properties');
+          }
+        }
+        else {
+          names.push(type.name);
+        }
       }
       else {
         names.push(type);
       }
       return names;
-    }, []);
-    if (names.length < 2) {
-      return names[0] || 'any';
+    }, []), separator);
+  }
+
+  /**
+   * Join a list of terms as an English sentence.
+   */
+  function joinSentence (terms: Array<string>, separator: string = "or"): string {
+    if (terms.length < 2) {
+      return terms[0] || 'any';
     }
     else {
-      const last = names.pop();
-      return `${names.join(', ')} or ${last}`;
+      const last = terms.pop();
+      return `${terms.join(', ')} ${separator} ${last}`;
     }
   }
 
@@ -258,6 +285,41 @@ export default function build (babel: Object): Object {
           true
         ),
         t.literal(type)
+      );
+    }
+    else if (type.type === 'ObjectTypeAnnotation') {
+      return t.logicalExpression(
+        "||",
+        t.logicalExpression(
+          "||",
+          t.binaryExpression(
+            "===",
+            subject,
+            t.literal(null)
+          ),
+          t.binaryExpression(
+            "!==",
+            t.unaryExpression('typeof', subject),
+            t.literal('object')
+          )
+        ),
+        type.properties.reduce((expr, prop) => {
+          const key = prop.key;
+          const valueTypes = extractAnnotationTypes(prop.value);
+          const test = createIfTest(t.memberExpression(subject, key), valueTypes);
+          if (expr === null) {
+            return test;
+          }
+          else {
+            return t.logicalExpression(
+              "||",
+              expr,
+              test
+            );
+          }
+          expr = t.literal(true);
+          return expr;
+        }, null)
       );
     }
     else {
@@ -345,7 +407,7 @@ export default function build (babel: Object): Object {
       }
     }
     else if (node.type === "ObjectExpression") {
-      return types.indexOf("object") > -1
+      return types.indexOf("object") > -1 || types.indexOf("shape") > -1
              ? TYPE_VALID
              : TYPE_INVALID;
     }

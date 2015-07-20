@@ -3,6 +3,18 @@ import fs from 'fs';
 import {parse, transform, traverse} from 'babel';
 
 describe('Typecheck', function () {
+  ok("return-object-types", {greeting: "hello world", id: 123});
+  failWith("Function 'demo' return value violates contract, expected Object with properties greeting and id got Object", "return-object-types", {foo: "bar"});
+
+  ok("nested-object-types", {greeting: "hello world", id: 123, nested: {left: 10, right: 20}});
+  failWith("Value of argument 'input' violates contract, expected Object with properties greeting, id and nested got Object", "nested-object-types", {foo: "bar"});
+  failWith("Value of argument 'input' violates contract, expected Object with properties greeting, id and nested got Object", "nested-object-types", {greeting: "hello world", id: 123, nested: {left: true, right: false}});
+  failWith("Value of argument 'input' violates contract, expected Object with properties greeting, id and nested got Object", "nested-object-types", {greeting: "hello world", id: 123, nested: {left: 10}});
+  failWith("Value of argument 'input' violates contract, expected Object with properties greeting, id and nested got Object", "nested-object-types", {greeting: "hello world", id: "123", nested: {left: 10, right: 20}});
+
+  ok("complex-object-types", {greeting: "hello world", id: 123});
+  failWith("Value of argument 'input' violates contract, expected Object with properties greeting and id got Object", "complex-object-types", {foo: "bar"});
+  failWith("Value of argument 'input' violates contract, expected Object with properties greeting and id got string", "complex-object-types", "foo");
 
   ok("conditional-return-value");
   ok("any-return-value");
@@ -24,6 +36,7 @@ describe('Typecheck', function () {
   failStatic("bad-default-arguments");
 
   ok("class-method");
+
 
   ok("poly-args", "hello world", /a/);
   ok("poly-args", ["hello world"], /b/);
