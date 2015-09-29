@@ -60,6 +60,11 @@ describe('Typecheck', function () {
   ok("optional-arguments", "hello world", 123);
   failWith("Value of optional argument 'bar' violates contract, expected number or undefined got string", "optional-arguments", "hello world", "123");
   failWith("Value of optional argument 'bar' violates contract, expected number or undefined got null", "optional-arguments", "hello world", null);
+
+  ok("default-arguments", "hello world");
+  ok("default-arguments", "hello world", 123);
+  failWith("Value of argument 'bar' violates contract, expected number got string", "default-arguments", "hello world", "123");
+  failWith("Value of argument 'bar' violates contract, expected number got null", "default-arguments", "hello world", null);
 });
 
 
