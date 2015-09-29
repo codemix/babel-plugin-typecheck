@@ -131,13 +131,15 @@ export default function build (babel: Object): Object {
     if (types.indexOf('any') > -1 || types.indexOf('mixed') > -1) {
       return null;
     }
+    if (param.optional)
+      types = types.concat("undefined");    
     return t.ifStatement(
       createIfTest(param, types),
       t.throwStatement(
         t.newExpression(
           t.identifier("TypeError"),
           [t.binaryExpression("+",
-            t.literal(`Value of argument '${param.name}' violates contract, expected ${createTypeNameList(types)} got `),
+            t.literal(`Value of ${param.optional ? 'optional argument' : 'argument'} '${param.name}' violates contract, expected ${createTypeNameList(types)} got `),
             createReadableTypeName(param)
           )]
         )
@@ -306,6 +308,8 @@ export default function build (babel: Object): Object {
         type.properties.reduce((expr, prop) => {
           const key = prop.key;
           const valueTypes = extractAnnotationTypes(prop.value);
+          if (prop.optional)
+            valueTypes.push("undefined");
           const test = createIfTest(t.memberExpression(subject, key), valueTypes);
           if (expr === null) {
             return test;

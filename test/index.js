@@ -48,6 +48,18 @@ describe('Typecheck', function () {
 
   failWith("Function 'demo' return value violates contract, expected number or string got Object", "conditional-return-value", {a: 123});
 
+  ok("optional-properties", {greeting: "hello world", id: 123});
+  ok("optional-properties", {greeting: "hello world"});
+  failWith("Value of argument 'input' violates contract, expected Object with properties greeting and id got Object", "optional-properties", {greeting: "hello world", id: "123"});
+  failWith("Value of argument 'input' violates contract, expected Object with properties greeting and id got Object", "optional-properties", {greeting: "hello world", id: null});
+  failWith("Value of argument 'input' violates contract, expected Object with properties greeting and id got Object", "optional-properties", {id: 123});
+  failWith("Value of argument 'input' violates contract, expected Object with properties greeting and id got Object", "optional-properties", {foo: "bar"});
+  failWith("Value of argument 'input' violates contract, expected Object with properties greeting and id got string", "optional-properties", "foo");
+
+  ok("optional-arguments", "hello world");
+  ok("optional-arguments", "hello world", 123);
+  failWith("Value of optional argument 'bar' violates contract, expected number or undefined got string", "optional-arguments", "hello world", "123");
+  failWith("Value of optional argument 'bar' violates contract, expected number or undefined got null", "optional-arguments", "hello world", null);
 });
 
 
