@@ -30,7 +30,7 @@
   },
   "homepage": "https://github.com/codemix/babel-plugin-typecheck",
   "devDependencies": {
-    "mocha": "^2.2.4",
+    "mocha": "~2.2.4",
     "should": "^6.0.1",
     "babel": "^5.6.0"
   }
