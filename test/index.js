@@ -65,6 +65,9 @@ describe('Typecheck', function () {
   ok("default-arguments", "hello world", 123);
   failWith("Value of argument 'bar' violates contract, expected number got string", "default-arguments", "hello world", "123");
   failWith("Value of argument 'bar' violates contract, expected number got null", "default-arguments", "hello world", null);
+
+  ok("qualified-types", {})
+  failWith("Value of argument 'foo' violates contract, expected T.Object or T.Array got string", "qualified-types", "hello")
 });
 
 
