@@ -1,4 +1,4 @@
-import Plugin from '../src';
+import typecheck from '../lib';
 import fs from 'fs';
 import {parse, transform, traverse} from 'babel';
 
@@ -76,7 +76,7 @@ function load (basename) {
   const filename = `${__dirname}/fixtures/${basename}.js`;
   const source = fs.readFileSync(filename, 'utf8');
   const transformed = transform(source, {
-    plugins: [Plugin]
+    plugins: [typecheck]
   });
   const context = {
     exports: {}

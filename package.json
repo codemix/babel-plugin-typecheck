@@ -5,8 +5,9 @@
   "main": "lib/index.js",
   "scripts": {
     "build": "babel -d ./lib ./src",
+    "build-typed": "npm run build && babel --plugins typecheck -d ./lib ./src",
     "prepublish": "npm run build",
-    "pretest": "npm run build",
+    "pretest": "npm run build-typed",
     "test": "mocha",
     "watch": "mocha --watch"
   },
