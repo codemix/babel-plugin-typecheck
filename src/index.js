@@ -68,17 +68,19 @@ export default function build (babel: Object): Object {
       case "MixedTypeAnnotation":
         return ["mixed"];
       case "GenericTypeAnnotation":
-        if (annotation.id.name === 'any') {
-          return ["any"];
-        }
-        else if (annotation.id.name === 'Function') {
-          return ["function"];
-        }
-        else if (annotation.id.name === 'Object') {
-          return ["object"];
-        }
-        else if (annotation.id.name === 'Array') {
-          return ["array"];
+        if(annotation.id.type == 'Identifier') {
+          if (annotation.id.name === 'any') {
+            return ["any"];
+          }
+          else if (annotation.id.name === 'Function') {
+            return ["function"];
+          }
+          else if (annotation.id.name === 'Object') {
+            return ["object"];
+          }
+          else if (annotation.id.name === 'Array') {
+            return ["array"];
+          }
         }
         return [annotation.id];
       case "ObjectTypeAnnotation":
@@ -198,7 +200,7 @@ export default function build (babel: Object): Object {
           }
         }
         else {
-          names.push(type.name);
+          names.push(getTypeName(type));
         }
       }
       else {
@@ -206,6 +208,20 @@ export default function build (babel: Object): Object {
       }
       return names;
     }, []), separator);
+  }
+
+  /**
+   * Get name of a type as a string.
+   */
+  function getTypeName (node): string {
+    if(node.type == 'Identifier') {
+      return node.name
+    }
+    else if(node.type == 'QualifiedTypeIdentifier') {
+      return getTypeName(node.qualification) + '.' + getTypeName(node.id);
+    }
+
+    throw this.errorWithNode(`Unsupported type: ${node.type}`);
   }
 
   /**
@@ -332,13 +348,28 @@ export default function build (babel: Object): Object {
         t.binaryExpression(
           "instanceof",
           subject,
-          type
+          createTypeExpression(type)
         )
       );
     }
-    return type;
   }
 
+  /**
+   * Convert type specifier to expression.
+   */
+  function createTypeExpression (node: Object) : Object {
+    if(node.type == 'Identifier') {
+      return node;
+    }
+    else if(node.type == 'QualifiedTypeIdentifier') {
+      return t.memberExpression(
+        createTypeExpression(node.qualification),
+        createTypeExpression(node.id)
+      );
+    }
+
+    throw this.errorWithNode(`Unsupported type: ${node.type}`);
+  }
 
   /**
    * Extract a list of permissible return types for the function.
