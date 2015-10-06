@@ -34,6 +34,10 @@ export default function build (babel: Object): Object {
         const argumentGuards = createArgumentGuards(node);
         const returnTypes = extractReturnTypes(node);
         if (argumentGuards.length > 0 || returnTypes.length > 0) {
+          if (node.type === "ArrowFunctionExpression" && node.expression) {
+            node.expression = false;
+            node.body = t.blockStatement(t.returnStatement(node.body));
+          }
           this.traverse(visitors, {
             constants: scope.getAllBindingsOfKind("const"),
             subject: node,
@@ -527,11 +531,15 @@ export default function build (babel: Object): Object {
       // will visit them for us and it keeps things a *lot* simpler.
       return this.skip();
     }
-    else if (node.type === "BlockStatement" && parent === state.subject && state.argumentGuards.length > 0) {
-      // attach the argument guards to the first block statement in the function body
-      return t.blockStatement(
-        state.argumentGuards.concat(node.body)
-      );
+    else if (node == state.subject.body) {
+      if (node.type === "BlockStatement") {
+        // attach the argument guards to the first block statement in the function body
+        return t.blockStatement(
+          state.argumentGuards.concat(node.body)
+        );
+      }
+      // the function body must be expanded to a block prior to this
+      throw this.errorWithNode("Unexpanded function body");
     }
   }
 
