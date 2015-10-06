@@ -548,29 +548,31 @@ export default function build (babel: Object): Object {
    * Invoked when leaving a visited AST node.
    */
   function exitNode (node: Object, parent: Object, scope: Object, state: Object) {
-    if (node.type !== 'ReturnStatement' || state.returnTypes.length === 0) {
-      // we only care about typed return statements.
-      return;
-    }
-    let validated = staticallyVerifyReturnType(node, state.returnTypes);
-    if (typeof validated === 'object' && state.constants[validated.name]) {
-      // the return value is a constant, let's see if we can infer the type
-      const constant = state.constants[validated.name];
-      const declarator = constant.path.parent.declarations[constant.path.key];
-      validated = staticallyVerifyType(declarator.init, state.returnTypes);
-    }
+    if (node.type === 'ReturnStatement') {
+      if (state.returnTypes.length === 0) {
+        // we only care about typed return statements.
+        return;
+      }
+      let validated = staticallyVerifyReturnType(node, state.returnTypes);
+      if (typeof validated === 'object' && state.constants[validated.name]) {
+        // the return value is a constant, let's see if we can infer the type
+        const constant = state.constants[validated.name];
+        const declarator = constant.path.parent.declarations[constant.path.key];
+        validated = staticallyVerifyType(declarator.init, state.returnTypes);
+      }
 
-    if (validated === TYPE_INVALID) {
-      throw this.errorWithNode(`Function ${state.subject.id ? `'${state.subject.id.name}' ` : ''}return value violates contract, expected ${createTypeNameList(state.returnTypes)}.`);
-    }
-    else if (validated === TYPE_VALID) {
-      // no need to guard, has been statically verified.
-      return;
-    }
-    else {
-      const ref = createReferenceTo(this, node.argument, scope);
-      this.insertBefore(createReturnTypeGuard(ref, node, scope, state));
-      return t.returnStatement(ref);
+      if (validated === TYPE_INVALID) {
+        throw this.errorWithNode(`Function ${state.subject.id ? `'${state.subject.id.name}' ` : ''}return value violates contract, expected ${createTypeNameList(state.returnTypes)}.`);
+      }
+      else if (validated === TYPE_VALID) {
+        // no need to guard, has been statically verified.
+        return;
+      }
+      else {
+        const ref = createReferenceTo(this, node.argument, scope);
+        this.insertBefore(createReturnTypeGuard(ref, node, scope, state));
+        return t.returnStatement(ref);
+      }
     }
   }
 
