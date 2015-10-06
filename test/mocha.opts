@@ -1,5 +1,4 @@
 --reporter=spec
 --recursive
---harmony
 --require should
 --require ./test-polyfill.js

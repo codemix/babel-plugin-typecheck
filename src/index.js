@@ -2,7 +2,7 @@
  * # Typecheck Transformer
  */
 export default function build (babel: Object): Object {
-  const {Transformer, types: t, traverse, Scope} = babel;
+  const {Transformer, types: t, traverse} = babel;
 
   // constants used when statically verifying types
   const TYPE_INVALID = 0;
@@ -29,7 +29,7 @@ export default function build (babel: Object): Object {
   ];
 
   return new Transformer("typecheck", {
-    Function (node: Object, parent: Object, scope: Scope) {
+    Function (node: Object, parent: Object, scope: Object) {
       try {
         const argumentGuards = createArgumentGuards(node);
         const returnTypes = extractReturnTypes(node);
@@ -134,7 +134,7 @@ export default function build (babel: Object): Object {
       return null;
     }
     if (param.optional)
-      types = types.concat("undefined");    
+      types = types.concat("undefined");
     return t.ifStatement(
       createIfTest(param, types),
       t.throwStatement(
@@ -388,7 +388,7 @@ export default function build (babel: Object): Object {
   /**
    * Create a runtime type guard for a return statement.
    */
-  function createReturnTypeGuard (ref: Object, node: Object, scope: Scope, state: Object): Object {
+  function createReturnTypeGuard (ref: Object, node: Object, scope: Object, state: Object): Object {
     return t.ifStatement(
       createIfTest(ref, state.returnTypes),
       t.throwStatement(
@@ -521,7 +521,7 @@ export default function build (babel: Object): Object {
   /**
    * Invoked when `traverse()` enters a particular AST node.
    */
-  function enterNode (node: Object, parent: Object, scope: Scope, state: Object) {
+  function enterNode (node: Object, parent: Object, scope: Object, state: Object) {
     if (t.isFunction(node)) {
       // We don't descend into nested functions because the outer traversal
       // will visit them for us and it keeps things a *lot* simpler.
@@ -539,7 +539,7 @@ export default function build (babel: Object): Object {
   /**
    * Invoked when leaving a visited AST node.
    */
-  function exitNode (node: Object, parent: Object, scope: Scope, state: Object) {
+  function exitNode (node: Object, parent: Object, scope: Object, state: Object) {
     if (node.type !== 'ReturnStatement' || state.returnTypes.length === 0) {
       // we only care about typed return statements.
       return;
