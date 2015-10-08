@@ -47,8 +47,13 @@ export default function build (babel: Object): Object {
     },
     Function (node: Object, parent: Object, scope: Object) {
       try {
+        if (node.typeParameters != null) {
+          throw this.errorWithNode('Type parameters are not supported');
+        }
+
         const argumentGuards = createArgumentGuards(node);
         const returnTypes = extractReturnTypes(node);
+
         if (argumentGuards.length > 0 || returnTypes.length > 0) {
           if (node.type === "ArrowFunctionExpression" && node.expression) {
             node.expression = false;
