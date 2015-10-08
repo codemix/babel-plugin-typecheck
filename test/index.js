@@ -68,6 +68,16 @@ describe('Typecheck', function () {
 
   ok("qualified-types", {})
   failWith("Value of argument 'foo' violates contract, expected T.Object or T.Array got string", "qualified-types", "hello")
+
+  ok("var-declarations", ["abc", "123"])
+  failWith("Value of variable 'a' violates contract, expected array got string", "var-declarations", "abc")
+  failWith("Value of variable 'b' violates contract, expected string got number", "var-declarations", ["abc", 123])
+
+  ok("arrow-function", 123)
+  ok("arrow-function-2", 123)
+
+  failWith("Value of argument 'arg' violates contract, expected number got string", "arrow-function", "abc")
+  failWith("Value of argument 'arg' violates contract, expected number got string", "arrow-function-2", "abc")
 });
 
 

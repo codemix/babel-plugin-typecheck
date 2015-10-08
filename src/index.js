@@ -29,11 +29,36 @@ export default function build (babel: Object): Object {
   ];
 
   return new Transformer("typecheck", {
+    Program (node: Object, parent: Object, scope: Object) {
+      try {
+        this.traverse(visitors, {
+          constants: scope.getAllBindingsOfKind("const"),
+          subject: node,
+        });
+      }
+      catch (e) {
+        if (e instanceof SyntaxError) {
+          throw this.errorWithNode(e.message);
+        }
+        else {
+          throw e;
+        }
+      }
+    },
     Function (node: Object, parent: Object, scope: Object) {
       try {
+        if (node.typeParameters != null) {
+          throw this.errorWithNode('Type parameters are not supported');
+        }
+
         const argumentGuards = createArgumentGuards(node);
         const returnTypes = extractReturnTypes(node);
+
         if (argumentGuards.length > 0 || returnTypes.length > 0) {
+          if (node.type === "ArrowFunctionExpression" && node.expression) {
+            node.expression = false;
+            node.body = t.blockStatement(t.returnStatement(node.body));
+          }
           this.traverse(visitors, {
             constants: scope.getAllBindingsOfKind("const"),
             subject: node,
@@ -109,7 +134,7 @@ export default function build (babel: Object): Object {
   /**
    * Create guards for the typed arguments of the function.
    */
-  function createArgumentGuards (node: Object): Array<Object|string> {
+  function createArgumentGuards (node: Object): Array<Object> {
     return node.params.reduce(
       (guards, param) => {
         if (param.type === "AssignmentPattern" && param.left.typeAnnotation) {
@@ -159,6 +184,42 @@ export default function build (babel: Object): Object {
       throw new SyntaxError(`Default value for argument '${param.left.name}' violates contract, expected ${createTypeNameList(types)}`);
     }
     return createArgumentGuard(param.left, types);
+  }
+
+
+  /**
+   * Create guards for a variable declaration statement.
+   */
+  function createVariableGuards (node : Object) : Array<Object> {
+    let guards = []
+    node.declarations.forEach(declaration => {
+      if(declaration.id.typeAnnotation) {
+        guards.push(createVariableGuard(declaration.id, extractAnnotationTypes(declaration.id.typeAnnotation)))
+      }
+    })
+    return guards
+  }
+
+
+  /**
+   * Create a guard for a variable identifier.
+   */
+  function createVariableGuard (id: Object, types: Array<Object|string>) {
+    if (types.indexOf('any') > -1 || types.indexOf('mixed') > -1) {
+      return null;
+    }
+    return t.ifStatement(
+      createIfTest(id, types),
+      t.throwStatement(
+        t.newExpression(
+          t.identifier("TypeError"),
+          [t.binaryExpression("+",
+            t.literal(`Value of variable '${id.name}' violates contract, expected ${createTypeNameList(types)} got `),
+            createReadableTypeName(id)
+          )]
+        )
+      )
+    );
   }
 
 
@@ -527,11 +588,15 @@ export default function build (babel: Object): Object {
       // will visit them for us and it keeps things a *lot* simpler.
       return this.skip();
     }
-    else if (node.type === "BlockStatement" && parent === state.subject && state.argumentGuards.length > 0) {
-      // attach the argument guards to the first block statement in the function body
-      return t.blockStatement(
-        state.argumentGuards.concat(node.body)
-      );
+    else if (state.argumentGuards != null && node === state.subject.body) {
+      if (node.type === "BlockStatement") {
+        // attach the argument guards to the first block statement in the function body
+        return t.blockStatement(
+          state.argumentGuards.concat(node.body)
+        );
+      }
+      // the function body must be expanded to a block prior to this
+      throw this.errorWithNode("Unexpanded function body");
     }
   }
 
@@ -540,29 +605,45 @@ export default function build (babel: Object): Object {
    * Invoked when leaving a visited AST node.
    */
   function exitNode (node: Object, parent: Object, scope: Object, state: Object) {
-    if (node.type !== 'ReturnStatement' || state.returnTypes.length === 0) {
-      // we only care about typed return statements.
-      return;
-    }
-    let validated = staticallyVerifyReturnType(node, state.returnTypes);
-    if (typeof validated === 'object' && state.constants[validated.name]) {
-      // the return value is a constant, let's see if we can infer the type
-      const constant = state.constants[validated.name];
-      const declarator = constant.path.parent.declarations[constant.path.key];
-      validated = staticallyVerifyType(declarator.init, state.returnTypes);
-    }
+    if (node.type === 'ReturnStatement') {
+      if (state.returnTypes != null && state.returnTypes.length === 0) {
+        // we only care about typed return statements.
+        return;
+      }
+      let validated = staticallyVerifyReturnType(node, state.returnTypes);
+      if (typeof validated === 'object' && state.constants[validated.name]) {
+        // the return value is a constant, let's see if we can infer the type
+        const constant = state.constants[validated.name];
+        const declarator = constant.path.parent.declarations[constant.path.key];
+        validated = staticallyVerifyType(declarator.init, state.returnTypes);
+      }
 
-    if (validated === TYPE_INVALID) {
-      throw this.errorWithNode(`Function ${state.subject.id ? `'${state.subject.id.name}' ` : ''}return value violates contract, expected ${createTypeNameList(state.returnTypes)}.`);
+      if (validated === TYPE_INVALID) {
+        throw this.errorWithNode(`Function ${state.subject.id ? `'${state.subject.id.name}' ` : ''}return value violates contract, expected ${createTypeNameList(state.returnTypes)}.`);
+      }
+      else if (validated === TYPE_VALID) {
+        // no need to guard, has been statically verified.
+        return;
+      }
+      else {
+        const ref = createReferenceTo(this, node.argument, scope);
+        this.insertBefore(createReturnTypeGuard(ref, node, scope, state));
+        return t.returnStatement(ref);
+      }
     }
-    else if (validated === TYPE_VALID) {
-      // no need to guard, has been statically verified.
-      return;
-    }
-    else {
-      const ref = createReferenceTo(this, node.argument, scope);
-      this.insertBefore(createReturnTypeGuard(ref, node, scope, state));
-      return t.returnStatement(ref);
+    else if (node.type === 'VariableDeclaration') {
+      if (parent.type === 'BlockStatement' || parent.type == 'Program') {
+        this.insertAfter(createVariableGuards(node));
+      }
+      else if (
+        parent.type === 'ForStatement' ||
+        parent.type === 'ForOfStatement' ||
+        parent.type === 'ForInStatement') {
+        parent.body = t.blockStatement([].concat(createVariableGuards(node), parent.body.body));
+      }
+      else {
+        throw this.errorWithNode('Can\'t insert type check here');
+      }
     }
   }
 
