@@ -30,56 +30,36 @@ export default function build (babel: Object): Object {
 
   return new Transformer("typecheck", {
     Program (node: Object, parent: Object, scope: Object) {
-      try {
+      this.traverse(visitors, {
+        constants: scope.getAllBindingsOfKind("const"),
+        subject: node,
+      });
+    },
+    Function (node: Object, parent: Object, scope: Object) {
+      if (node.typeParameters != null) {
+        throw this.errorWithNode('Type parameters are not supported');
+      }
+
+      const argumentGuards = createArgumentGuards(node);
+      const returnTypes = extractReturnTypes(node);
+
+      if (argumentGuards.length > 0 || returnTypes.length > 0) {
+        if (node.type === "ArrowFunctionExpression" && node.expression) {
+          node.expression = false;
+          node.body = t.blockStatement(t.returnStatement(node.body));
+        }
+        this.traverse(visitors, {
+          constants: scope.getAllBindingsOfKind("const"),
+          subject: node,
+          argumentGuards: argumentGuards,
+          returnTypes: returnTypes
+        });
+      }
+      else {
         this.traverse(visitors, {
           constants: scope.getAllBindingsOfKind("const"),
           subject: node,
         });
-      }
-      catch (e) {
-        if (e instanceof SyntaxError) {
-          throw this.errorWithNode(e.message);
-        }
-        else {
-          throw e;
-        }
-      }
-    },
-    Function (node: Object, parent: Object, scope: Object) {
-      try {
-        if (node.typeParameters != null) {
-          throw this.errorWithNode('Type parameters are not supported');
-        }
-
-        const argumentGuards = createArgumentGuards(node);
-        const returnTypes = extractReturnTypes(node);
-
-        if (argumentGuards.length > 0 || returnTypes.length > 0) {
-          if (node.type === "ArrowFunctionExpression" && node.expression) {
-            node.expression = false;
-            node.body = t.blockStatement(t.returnStatement(node.body));
-          }
-          this.traverse(visitors, {
-            constants: scope.getAllBindingsOfKind("const"),
-            subject: node,
-            argumentGuards: argumentGuards,
-            returnTypes: returnTypes
-          });
-        }
-        else {
-          this.traverse(visitors, {
-            constants: scope.getAllBindingsOfKind("const"),
-            subject: node,
-          });
-        }
-      }
-      catch (e) {
-        if (e instanceof SyntaxError) {
-          throw this.errorWithNode(e.message);
-        }
-        else {
-          throw e;
-        }
       }
     }
   });
