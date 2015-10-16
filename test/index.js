@@ -73,6 +73,11 @@ describe('Typecheck', function () {
   failWith("Value of variable 'a' violates contract, expected array got string", "var-declarations", "abc")
   failWith("Value of variable 'b' violates contract, expected string got number", "var-declarations", ["abc", 123])
 
+  ok("var-declarations-2", ["abc", "123"])
+  ok("var-declarations-2", ["abc", "1"])
+  failWith("Value of variable 'a' violates contract, expected array got string", "var-declarations-2", "abc")
+  failWith("Value of variable 'b' violates contract, expected string got number", "var-declarations-2", ["abc", 123])
+
   ok("arrow-function", 123)
   ok("arrow-function-2", 123)
 
