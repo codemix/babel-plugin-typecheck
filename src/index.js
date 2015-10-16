@@ -361,6 +361,25 @@ export default function build (babel: Object): Object {
         )
       );
     }
+    else if (type === "object") {
+      return t.logicalExpression(
+        "||",
+        t.binaryExpression(
+          "===",
+          subject,
+          t.literal(null)
+        ),
+        t.binaryExpression(
+          "!==",
+          t.unaryExpression(
+            "typeof",
+            subject,
+            true
+          ),
+          t.literal("object")
+        )
+      );
+    }
     else if (typeof type === 'string') {
       return t.binaryExpression(
         "!==",
