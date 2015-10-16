@@ -34,6 +34,7 @@ describe('Typecheck', function () {
   failStatic("bad-const-tracking");
   failStatic("bad-return-value");
   failStatic("bad-default-arguments");
+  failStatic("missing-return");
 
   ok("class-method");
 
