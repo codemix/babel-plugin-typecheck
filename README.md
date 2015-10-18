@@ -43,6 +43,33 @@ function bar (input: string = 123): string { // <-- SyntaxError: default value i
 }
 ```
 
+# Examples
+
+The basic format is similar to [Flow Type Annotations](http://flowtype.org/docs/type-annotations.html).
+
+Here are a few examples of annotations this plugin supports:
+
+```js
+function foo(
+    aNum: number, 
+    anOptionalString: ?string, // will allow null/undefined
+    anObject: Object,
+    aDate: Date,
+    anError: Error,
+    aUnionType: Object|string,
+    aClass: User,
+    aShape: {foo: number, bar: ?string},
+    anArray: Array,
+    arrayOf: Array<string>, // inner type is not validated yet, see #10
+    {x, y}: {x: string, y: number}, // destructuring works
+    es6Defaults: number = 42
+) : number {
+  return aNum;
+}
+```
+
+# Optimization
+
 In cases where typecheck can statically verify that the return value is of the correct type, no type checks will be inserted, for instance:
 ```js
 function bar (): string|Object {
