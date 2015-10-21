@@ -1,6 +1,12 @@
-import typecheck from '../lib';
 import fs from 'fs';
 import {parse, transform, traverse} from 'babel';
+
+if (process.env.NODE_WATCH) {
+  var typecheck = require('../src');
+}
+else {
+  var typecheck = require('../lib');
+}
 
 describe('Typecheck', function () {
   ok("fancy-generic-function", Buffer(123), (value) => value);
