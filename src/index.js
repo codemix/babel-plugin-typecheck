@@ -46,34 +46,25 @@ export default function build (babel: Object): Object {
       }
     },
     Function (node: Object, parent: Object, scope: Object) {
-      try {
-        if (node.typeParameters != null) {
-          throw this.errorWithNode('Type parameters are not supported');
-        }
-
-        const argumentGuards = createArgumentGuards(node);
-        const returnTypes = extractReturnTypes(node);
-
-        if (argumentGuards.length > 0 || returnTypes.length > 0) {
-          if (node.type === "ArrowFunctionExpression" && node.expression) {
-            node.expression = false;
-            node.body = t.blockStatement(t.returnStatement(node.body));
-          }
-          this.traverse(visitors, {
-            constants: scope.getAllBindingsOfKind("const"),
-            subject: node,
-            argumentGuards: argumentGuards,
-            returnTypes: returnTypes
-          });
-        }
+      const genericTypes = [];
+      if (node.typeParameters != null && node.typeParameters.type === 'TypeParameterDeclaration') {
+        genericTypes.push(...node.typeParameters.params.map(param => param.name));
       }
-      catch (e) {
-        if (e instanceof SyntaxError) {
-          throw this.errorWithNode(e.message);
+      const argumentGuards = createArgumentGuards(node, genericTypes);
+      const returnTypes = extractReturnTypes(node);
+
+      if (argumentGuards.length > 0 || returnTypes.length > 0) {
+        if (node.type === "ArrowFunctionExpression" && node.expression) {
+          node.expression = false;
+          node.body = t.blockStatement(t.returnStatement(node.body));
         }
-        else {
-          throw e;
-        }
+        this.traverse(visitors, {
+          constants: scope.getAllBindingsOfKind("const"),
+          subject: node,
+          argumentGuards: argumentGuards,
+          returnTypes: returnTypes,
+          genericTypes: genericTypes
+        });
       }
     }
   });
@@ -125,8 +116,10 @@ export default function build (babel: Object): Object {
         return ["undefined"];
       case "AnyTypeAnnotation":
         return ["any"];
+      case "FunctionTypeAnnotation":
+        return ["function"];
       default:
-        throw new SyntaxError(`Unsupported type annotation type: ${annotation.type}`);
+        throw new SyntaxError(`Unsupported annotation type: ${annotation.type}`);
     }
   }
 
@@ -134,14 +127,14 @@ export default function build (babel: Object): Object {
   /**
    * Create guards for the typed arguments of the function.
    */
-  function createArgumentGuards (node: Object): Array<Object> {
+  function createArgumentGuards (node: Object, genericTypes: Array = []): Array<Object> {
     return node.params.reduce(
       (guards, param) => {
         if (param.type === "AssignmentPattern" && param.left.typeAnnotation) {
-          guards.push(createDefaultArgumentGuard(param, extractAnnotationTypes(param.left.typeAnnotation)));
+          guards.push(createDefaultArgumentGuard(param, extractAnnotationTypes(param.left.typeAnnotation), genericTypes));
         }
         else if (param.typeAnnotation) {
-          guards.push(createArgumentGuard(param, extractAnnotationTypes(param.typeAnnotation)));
+          guards.push(createArgumentGuard(param, extractAnnotationTypes(param.typeAnnotation), genericTypes));
         }
         return guards;
       },
@@ -154,14 +147,19 @@ export default function build (babel: Object): Object {
   /**
    * Create a guard for an individual argument.
    */
-  function createArgumentGuard (param: Object, types: Array<Object|string>): ?Object {
+  function createArgumentGuard (param: Object, types: Array<Object|string>, genericTypes: Array = []): ?Object {
     if (types.indexOf('any') > -1 || types.indexOf('mixed') > -1) {
       return null;
     }
-    if (param.optional)
+    if (param.optional) {
       types = types.concat("undefined");
+    }
+    const test = createIfTest(param, types, genericTypes);
+    if (!test) {
+      return null;
+    }
     return t.ifStatement(
-      createIfTest(param, types),
+      test,
       t.throwStatement(
         t.newExpression(
           t.identifier("TypeError"),
@@ -178,38 +176,42 @@ export default function build (babel: Object): Object {
   /**
    * Create a guard for a default paramter.
    */
-  function createDefaultArgumentGuard (param: Object, types: Array<Object|string>): Object {
+  function createDefaultArgumentGuard (param: Object, types: Array<Object|string>, genericTypes: Array = []): Object {
     const validated = staticallyVerifyDefaultArgumentType(param, types);
     if (validated === TYPE_INVALID) {
       throw new SyntaxError(`Default value for argument '${param.left.name}' violates contract, expected ${createTypeNameList(types)}`);
     }
-    return createArgumentGuard(param.left, types);
+    return createArgumentGuard(param.left, types, genericTypes);
   }
 
 
   /**
    * Create guards for a variable declaration statement.
    */
-  function createVariableGuards (node : Object) : Array<Object> {
+  function createVariableGuards (node : Object, genericTypes: Array = []) : Array<Object> {
     let guards = []
     node.declarations.forEach(declaration => {
-      if(declaration.id.typeAnnotation) {
-        guards.push(createVariableGuard(declaration.id, extractAnnotationTypes(declaration.id.typeAnnotation)))
+      if (declaration.id.typeAnnotation) {
+        guards.push(createVariableGuard(declaration.id, extractAnnotationTypes(declaration.id.typeAnnotation), genericTypes));
       }
     })
-    return guards
+    return guards.filter(identity);
   }
 
 
   /**
    * Create a guard for a variable identifier.
    */
-  function createVariableGuard (id: Object, types: Array<Object|string>) {
+  function createVariableGuard (id: Object, types: Array<Object|string>, genericTypes: Array = []) {
     if (types.indexOf('any') > -1 || types.indexOf('mixed') > -1) {
       return null;
     }
+    const test = createIfTest(id, types, genericTypes);
+    if (!test) {
+      return null;
+    }
     return t.ifStatement(
-      createIfTest(id, types),
+      test,
       t.throwStatement(
         t.newExpression(
           t.identifier("TypeError"),
@@ -227,15 +229,22 @@ export default function build (babel: Object): Object {
    * Create a logical expression that checks that the subject node
    * has one of the given types.
    */
-  function createIfTest (subject, types) {
+  function createIfTest (subject, types, genericTypes: Array = []) {
     return types.reduce((last, type, index) => {
-      if (index === 0) {
-        return createTypeTest(subject, type);
+      const test = createTypeTest(subject, type, genericTypes);
+      if (!test) {
+        if (last && types[index - 1] === "null") {
+          return null;
+        }
+        return last;
+      }
+      if (last === null) {
+        return test;
       }
       return t.logicalExpression(
         "&&",
         last,
-        createTypeTest(subject, type)
+        test
       );
     }, null);
   }
@@ -335,7 +344,7 @@ export default function build (babel: Object): Object {
    * Create an expression that can validate that the given
    * subject node has the given type.
    */
-  function createTypeTest (subject:Object, type: Object|string): Object {
+  function createTypeTest (subject:Object, type: Object|string, genericTypes: Array = []): ?Object {
     if (type === "null") {
       return t.binaryExpression(
         "!=",
@@ -387,7 +396,10 @@ export default function build (babel: Object): Object {
           const valueTypes = extractAnnotationTypes(prop.value);
           if (prop.optional)
             valueTypes.push("undefined");
-          const test = createIfTest(t.memberExpression(subject, key), valueTypes);
+          const test = createIfTest(t.memberExpression(subject, key), valueTypes, genericTypes);
+          if (!test) {
+            return expr;
+          }
           if (expr === null) {
             return test;
           }
@@ -402,6 +414,9 @@ export default function build (babel: Object): Object {
           return expr;
         }, null)
       );
+    }
+    else if (type.type === 'Identifier' && ~genericTypes.indexOf(type.name)) {
+      return null;
     }
     else {
       return t.unaryExpression(
@@ -449,9 +464,13 @@ export default function build (babel: Object): Object {
   /**
    * Create a runtime type guard for a return statement.
    */
-  function createReturnTypeGuard (ref: Object, node: Object, scope: Object, state: Object): Object {
+  function createReturnTypeGuard (ref: Object, node: Object, scope: Object, state: Object): ?Object {
+    const test = createIfTest(ref, state.returnTypes, state.genericTypes);
+    if (!test) {
+      return null;
+    }
     return t.ifStatement(
-      createIfTest(ref, state.returnTypes),
+      test,
       t.throwStatement(
         t.newExpression(
           t.identifier("TypeError"),
@@ -588,15 +607,19 @@ export default function build (babel: Object): Object {
       // will visit them for us and it keeps things a *lot* simpler.
       return this.skip();
     }
-    else if (state.argumentGuards != null && node === state.subject.body) {
-      if (node.type === "BlockStatement") {
-        // attach the argument guards to the first block statement in the function body
-        return t.blockStatement(
-          state.argumentGuards.concat(node.body)
-        );
+    else {
+      if (state.argumentGuards != null && node === state.subject.body) {
+        if (node.type === "BlockStatement") {
+          // attach the argument guards to the first block statement in the function body
+          return t.blockStatement(
+            state.argumentGuards.concat(node.body)
+          );
+        }
+        else {
+          // the function body must be expanded to a block prior to this
+          throw this.errorWithNode("Unexpanded function body");
+        }
       }
-      // the function body must be expanded to a block prior to this
-      throw this.errorWithNode("Unexpanded function body");
     }
   }
 
@@ -627,23 +650,25 @@ export default function build (babel: Object): Object {
       }
       else {
         const ref = createReferenceTo(this, node.argument, scope);
-        this.insertBefore(createReturnTypeGuard(ref, node, scope, state));
+        const guard = createReturnTypeGuard(ref, node, scope, state);
+        if (!guard) {
+          return;
+        }
+        this.insertBefore(guard);
         return t.returnStatement(ref);
       }
     }
     else if (node.type === 'VariableDeclaration') {
       if (parent.type === 'BlockStatement' || parent.type == 'Program') {
-        this.insertAfter(createVariableGuards(node));
+        this.insertAfter(createVariableGuards(node, state.genericTypes));
       }
       else if (
         parent.type === 'ForStatement' ||
         parent.type === 'ForOfStatement' ||
         parent.type === 'ForInStatement') {
-        parent.body = t.blockStatement([].concat(createVariableGuards(node), parent.body.body));
+        parent.body = t.blockStatement([].concat(createVariableGuards(node, state.genericTypes), parent.body.body));
       }
-      else {
-        throw this.errorWithNode('Can\'t insert type check here');
-      }
+      // Can't insert type check here.
     }
   }
 
