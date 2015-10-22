@@ -9,7 +9,7 @@
     "prepublish": "npm run build",
     "pretest": "npm run build-typed",
     "test": "mocha",
-    "watch": "mocha --watch"
+    "watch": "NODE_WATCH=1 mocha --watch"
   },
   "repository": {
     "type": "git",

@@ -1,8 +1,16 @@
-import typecheck from '../lib';
 import fs from 'fs';
 import {parse, transform, traverse} from 'babel';
 
+if (process.env.NODE_WATCH) {
+  var typecheck = require('../src');
+}
+else {
+  var typecheck = require('../lib');
+}
+
 describe('Typecheck', function () {
+  ok("fancy-generic-function", Buffer(123), (value) => value);
+  ok("generic-function", 123);
   ok("return-object-types", {greeting: "hello world", id: 123});
   failWith("Function 'demo' return value violates contract, expected Object with properties greeting and id got Object", "return-object-types", {foo: "bar"});
 
