@@ -649,13 +649,49 @@ export default function build (babel: Object): Object {
         return;
       }
       else {
-        const ref = createReferenceTo(this, node.argument, scope);
-        const guard = createReturnTypeGuard(ref, node, scope, state);
-        if (!guard) {
-          return;
+        if (parent.type !== 'BlockStatement' && parent.type !== "Program") {
+          let ref;
+          let block = [];
+          if (node.argument === null) {
+            ref = t.literal(null);
+          }
+          else if (node.argument === undefined) {
+            ref = t.literal(undefined);
+          }
+          else if (node.argument.type === "Literal") {
+            ref = node.argument;
+          }
+          else if (node.argument.type === "Identifier") {
+            ref = node.argument;
+          }
+          else {
+            ref = scope.generateUidIdentifierBasedOnNode(node.argument);
+            scope.push({id: ref});
+            block.push(t.expressionStatement(
+              t.assignmentExpression(
+                "=",
+                ref,
+                node.argument
+              )
+            ));
+          }
+          const guard = createReturnTypeGuard(ref, node, scope, state);
+          if (!guard) {
+            return;
+          }
+          block.push(guard);
+          block.push(t.returnStatement(ref));
+          return t.blockStatement(block);
         }
-        this.insertBefore(guard);
-        return t.returnStatement(ref);
+        else {
+          const ref = createReferenceTo(this, node.argument, scope);
+          const guard = createReturnTypeGuard(ref, node, scope, state);
+          if (!guard) {
+            return;
+          }
+          this.insertBefore(guard);
+          return t.returnStatement(ref);
+        }
       }
     }
     else if (node.type === 'VariableDeclaration') {
