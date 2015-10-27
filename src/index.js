@@ -30,20 +30,12 @@ export default function build (babel: Object): Object {
 
   return new Transformer("typecheck", {
     Program (node: Object, parent: Object, scope: Object) {
-      try {
-        this.traverse(visitors, {
-          constants: scope.getAllBindingsOfKind("const"),
-          subject: node,
-        });
-      }
-      catch (e) {
-        if (e instanceof SyntaxError) {
-          throw this.errorWithNode(e.message);
-        }
-        else {
-          throw e;
-        }
-      }
+      this.traverse(visitors, {
+        constants: scope.getAllBindingsOfKind("const"),
+        subject: node,
+        genericTypes: [],
+        returnCount: 0
+      });
     },
     Function (node: Object, parent: Object, scope: Object) {
       const genericTypes = [];
@@ -58,12 +50,26 @@ export default function build (babel: Object): Object {
           node.expression = false;
           node.body = t.blockStatement(t.returnStatement(node.body));
         }
-        this.traverse(visitors, {
+        const state = {
           constants: scope.getAllBindingsOfKind("const"),
           subject: node,
           argumentGuards: argumentGuards,
           returnTypes: returnTypes,
-          genericTypes: genericTypes
+          genericTypes: genericTypes,
+          returnCount: 0
+        };
+        this.traverse(visitors, state);
+
+        if (state.returnCount === 0 && returnTypes.length > 0 && !~returnTypes.indexOf('null')) {
+          throw this.errorWithNode(`Function does not return a value.`);
+        }
+      }
+      else {
+        this.traverse(visitors, {
+          constants: scope.getAllBindingsOfKind("const"),
+          subject: node,
+          genericTypes: genericTypes,
+          returnCount: 0
         });
       }
     }
@@ -364,6 +370,25 @@ export default function build (babel: Object): Object {
         )
       );
     }
+    else if (type === "object") {
+      return t.logicalExpression(
+        "||",
+        t.binaryExpression(
+          "===",
+          subject,
+          t.literal(null)
+        ),
+        t.binaryExpression(
+          "!==",
+          t.unaryExpression(
+            "typeof",
+            subject,
+            true
+          ),
+          t.literal("object")
+        )
+      );
+    }
     else if (typeof type === 'string') {
       return t.binaryExpression(
         "!==",
@@ -629,7 +654,8 @@ export default function build (babel: Object): Object {
    */
   function exitNode (node: Object, parent: Object, scope: Object, state: Object) {
     if (node.type === 'ReturnStatement') {
-      if (state.returnTypes != null && state.returnTypes.length === 0) {
+      state.returnCount++;
+      if (state.returnTypes == null || state.returnTypes.length === 0) {
         // we only care about typed return statements.
         return;
       }
@@ -695,14 +721,18 @@ export default function build (babel: Object): Object {
       }
     }
     else if (node.type === 'VariableDeclaration') {
+      const variableGuards: Array = createVariableGuards(node, state.genericTypes);
+      if (variableGuards.length === 0) {
+        return;
+      }
       if (parent.type === 'BlockStatement' || parent.type == 'Program') {
-        this.insertAfter(createVariableGuards(node, state.genericTypes));
+        this.insertAfter(variableGuards);
       }
       else if (
         parent.type === 'ForStatement' ||
         parent.type === 'ForOfStatement' ||
         parent.type === 'ForInStatement') {
-        parent.body = t.blockStatement([].concat(createVariableGuards(node, state.genericTypes), parent.body.body));
+        parent.body = t.blockStatement([].concat(variableGuards, parent.body.body));
       }
       // Can't insert type check here.
     }
