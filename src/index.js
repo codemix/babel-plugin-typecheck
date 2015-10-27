@@ -721,7 +721,7 @@ export default function build (babel: Object): Object {
       }
     }
     else if (node.type === 'VariableDeclaration') {
-      var variableGuards: Array = createVariableGuards(node, state.genericTypes);
+      const variableGuards: Array = createVariableGuards(node, state.genericTypes);
       if (variableGuards.length === 0) {
         return;
       }
@@ -732,7 +732,7 @@ export default function build (babel: Object): Object {
         parent.type === 'ForStatement' ||
         parent.type === 'ForOfStatement' ||
         parent.type === 'ForInStatement') {
-        parent.body = t.blockStatement([].concat(createVariableGuards(node, state.genericTypes), parent.body.body));
+        parent.body = t.blockStatement([].concat(variableGuards, parent.body.body));
       }
       // Can't insert type check here.
     }
