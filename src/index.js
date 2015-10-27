@@ -32,7 +32,9 @@ export default function build (babel: Object): Object {
     Program (node: Object, parent: Object, scope: Object) {
       this.traverse(visitors, {
         constants: scope.getAllBindingsOfKind("const"),
-        subject: node
+        subject: node,
+        genericTypes: [],
+        returnCount: 0
       });
     },
     Function (node: Object, parent: Object, scope: Object) {
@@ -48,19 +50,26 @@ export default function build (babel: Object): Object {
           node.expression = false;
           node.body = t.blockStatement(t.returnStatement(node.body));
         }
-        this.traverse(visitors, {
+        const state = {
           constants: scope.getAllBindingsOfKind("const"),
           subject: node,
           argumentGuards: argumentGuards,
           returnTypes: returnTypes,
-          genericTypes: genericTypes
-        });
+          genericTypes: genericTypes,
+          returnCount: 0
+        };
+        this.traverse(visitors, state);
+
+        if (state.returnCount === 0 && returnTypes.length > 0 && !~returnTypes.indexOf('null')) {
+          throw this.errorWithNode(`Function does not return a value.`);
+        }
       }
       else {
         this.traverse(visitors, {
           constants: scope.getAllBindingsOfKind("const"),
           subject: node,
-          genericTypes: genericTypes
+          genericTypes: genericTypes,
+          returnCount: 0
         });
       }
     }
@@ -645,6 +654,7 @@ export default function build (babel: Object): Object {
    */
   function exitNode (node: Object, parent: Object, scope: Object, state: Object) {
     if (node.type === 'ReturnStatement') {
+      state.returnCount++;
       if (state.returnTypes == null || state.returnTypes.length === 0) {
         // we only care about typed return statements.
         return;
