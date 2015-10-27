@@ -44,6 +44,7 @@ describe('Typecheck', function () {
   failStatic("bad-default-arguments");
   failStatic("missing-return");
   ok("missing-return-with-nullable");
+  ok("missing-return-with-mixed");
 
 
   ok("class-method");
