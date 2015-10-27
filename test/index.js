@@ -86,6 +86,8 @@ describe('Typecheck', function () {
 
   failWith("Value of argument 'arg' violates contract, expected number got string", "arrow-function", "abc")
   failWith("Value of argument 'arg' violates contract, expected number got string", "arrow-function-2", "abc")
+
+  ok("bug-30-conditional-return");
 });
 
 
