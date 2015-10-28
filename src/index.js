@@ -139,6 +139,11 @@ export default function build (babel: Object): Object {
         if (param.type === "AssignmentPattern" && param.left.typeAnnotation) {
           guards.push(createDefaultArgumentGuard(param, extractAnnotationTypes(param.left.typeAnnotation), genericTypes));
         }
+        else if (param.type === "RestElement" && param.typeAnnotation) {
+          const types = extractAnnotationTypes(param.typeAnnotation);
+          if (!types.includes("array") || types.some(t => t !== "array"))
+            throw new SyntaxError(`Annotation for rest argument '...${param.argument.name}' must be an array type`);
+        }
         else if (param.typeAnnotation) {
           guards.push(createArgumentGuard(param, extractAnnotationTypes(param.typeAnnotation), genericTypes));
         }
