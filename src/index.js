@@ -141,7 +141,7 @@ export default function build (babel: Object): Object {
         }
         else if (param.type === "RestElement" && param.typeAnnotation) {
           const types = extractAnnotationTypes(param.typeAnnotation);
-          if (types.indexOf("array") === -1)
+          if (!types.includes("array") || types.some(t => t !== "array"))
             throw new SyntaxError(`Annotation for rest argument '...${param.argument.name}' must be an array type`);
         }
         else if (param.typeAnnotation) {

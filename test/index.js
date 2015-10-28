@@ -102,6 +102,7 @@ describe('Typecheck', function () {
   ok("rest-params", 1);
   ok("rest-params", 10, 20);
   failStatic("bad-rest-params");
+  failStatic("bad-rest-params-2");
 });
 
 
