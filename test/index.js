@@ -97,6 +97,11 @@ describe('Typecheck', function () {
   failWith("Value of argument 'arg' violates contract, expected number got string", "arrow-function-2", "abc")
 
   ok("bug-30-conditional-return");
+
+  ok("rest-params");
+  ok("rest-params", 1);
+  ok("rest-params", 10, 20);
+  failStatic("bad-rest-params");
 });
 
 
