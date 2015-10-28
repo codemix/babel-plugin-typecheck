@@ -110,6 +110,8 @@ function load (basename) {
   const context = {
     exports: {}
   };
+  if (process.env.TYPECHECK_SAVE_TRANSFORMED)
+    fs.writeFileSync(`${__dirname}/fixtures/${basename}.js.transformed`, transformed.code, 'utf8');
   const loaded = new Function('module', 'exports', transformed.code);
   loaded(context, context.exports);
   return context.exports;
