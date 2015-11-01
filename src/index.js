@@ -61,6 +61,25 @@ export default function ({types: t, template}): Object {
         path.replaceWith(createTypeAliasChecks(path));
       },
 
+      ExportNamedDeclaration: {
+        enter (path: Object) {
+          const {node, scope} = path;
+          if (node.declaration.type === 'TypeAlias') {
+            path.replaceWith(t.exportNamedDeclaration(
+              createTypeAliasChecks({node: node.declaration, scope}),
+              [],
+              null
+            ));
+          }
+        }
+      },
+
+      ImportDeclaration: {
+        enter (path: Object) {
+          console.log(path.node);
+        }
+      },
+
       Function: {
         enter (path: Object) {
           const {node, scope} = path;
@@ -379,7 +398,7 @@ export default function ({types: t, template}): Object {
           return `a function`;
         }
         else if (isTypeChecker(annotation.id, scope)) {
-          return `${annotation.id.name} shaped`;
+          return `${annotation.id.name} shaped object`;
         }
         else {
           return `an instance of ${getTypeName(annotation.id)}`;
@@ -430,7 +449,7 @@ export default function ({types: t, template}): Object {
       return false;
     }
     const {path} = binding;
-    return path != null && path.type === 'VariableDeclaration' && path.node.isTypeChecker;
+    return path != null && (path.type === 'TypeAlias' || (path.type === 'VariableDeclaration' && path.node.isTypeChecker));
   }
 
   function isGenericType (id: Object, scope: Object): Boolean {
