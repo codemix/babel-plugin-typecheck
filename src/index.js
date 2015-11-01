@@ -81,44 +81,100 @@ export default function ({types: t, template}): Object {
       ReturnStatement: {
         enter (path: Object) {
           const {node, parent, scope} = path;
-          if (stack.length === 0) {
-            return;
-          }
-          const {node: fn} = stack[stack.length - 1];
-          const {returnType} = fn;
-          if (!returnType || node.isTypeChecked) {
+          if (stack.length === 0 || node.isTypeChecked) {
             return;
           }
           stack[stack.length - 1].returns++;
+          const {node: fn} = stack[stack.length - 1];
+          const {returnType} = fn;
+          if (!returnType) {
+            return;
+          }
+
           let id;
           if (node.argument.type === 'Identifier') {
             id = node.argument;
           }
           else {
             id = scope.generateUidIdentifierBasedOnNode(node.argument);
-            scope.push({id: id});
-            path.insertBefore(t.expressionStatement(
-              t.assignmentExpression(
-                '=',
-                id,
-                node.argument
-              ))
-            );
           }
           const check = checkAnnotation(id, returnType, scope);
-          const ret = t.returnStatement(id);
-          ret.isTypeChecked = true;
-          if (check) {
+          if (!check) {
+            return;
+          }
+          if (parent.type !== 'BlockStatement' && parent.type !== 'Program') {
+            const block = [];
+            if (node.argument.type !== 'Identifier') {
+              scope.push({id: id});
+              block.push(t.expressionStatement(
+                t.assignmentExpression(
+                  '=',
+                  id,
+                  node.argument
+                ))
+              );
+            }
+            const ret = t.returnStatement(id);
+            ret.isTypeChecked = true;
+            block.push(thrower({
+              check,
+              ret,
+              message: returnTypeErrorMessage(path, fn)
+            }));
+            path.replaceWith(t.blockStatement(block));
+          }
+          else {
+            if (node.argument.type !== 'Identifier') {
+              scope.push({id: id});
+              path.insertBefore(t.expressionStatement(
+                t.assignmentExpression(
+                  '=',
+                  id,
+                  node.argument
+                ))
+              );
+            }
+            const ret = t.returnStatement(id);
+            ret.isTypeChecked = true;
             path.replaceWith(thrower({
               check,
               ret,
               message: returnTypeErrorMessage(path, fn)
             }));
           }
-          else {
-            path.replaceWith(ret);
+        }
+      },
+
+      VariableDeclaration: {
+        enter (path: Object) {
+          const {node, scope} = path;
+          const collected = [];
+          for (let declaration of node.declarations) {
+            const {id, init} = declaration;
+            if (!id.typeAnnotation || id.hasBeenTypeChecked) {
+              continue;
+            }
+            id.hasBeenTypeChecked = true;
+            const check = checkAnnotation(id, id.typeAnnotation, scope);
+            if (check) {
+              collected.push(guard({
+                check,
+                message: varTypeErrorMessage(id, scope)
+              }));
+            }
           }
-          //const check = checkAnnotation(returnType, )
+          if (collected.length > 0) {
+            const check = collected.reduce((check, branch) => {
+              branch.alternate = check;
+              return branch;
+            });
+            if (path.parent.type === 'Program' || path.parent.type === 'BlockStatement') {
+              path.insertAfter(check);
+            }
+            else {
+              path.replaceWith(t.blockStatement([node, check]));
+            }
+          }
         }
       }
     }
@@ -404,6 +460,11 @@ export default function ({types: t, template}): Object {
           return createDefaultParamGuard(param, scope);
         }
       }
+      else if (param.type === 'RestElement') {
+        if (param.typeAnnotation) {
+          return createRestParamGuard(param, scope);
+        }
+      }
       else if (param.typeAnnotation) {
         return createParamGuard(param, scope);
       }
@@ -411,6 +472,7 @@ export default function ({types: t, template}): Object {
   }
 
   function createParamGuard (node: Object, scope: Object): ?Object {
+    node.hasBeenTypeChecked = true;
     let check = checkAnnotation(node, node.typeAnnotation, scope);
     if (!check) {
       return;
@@ -434,6 +496,27 @@ export default function ({types: t, template}): Object {
     return createParamGuard(id, scope);
   }
 
+  function createRestParamGuard (node: Object, scope: Object): ?Object {
+    const {argument: id} = node;
+    id.hasBeenTypeChecked = true;
+    let check = checkAnnotation(id, node.typeAnnotation, scope);
+    if (!check) {
+      return;
+    }
+    if (node.optional) {
+      check = t.logicalExpression(
+        '||',
+        checks.undefined({input: id}).expression,
+        check
+      );
+    }
+    const message = paramTypeErrorMessage(id, scope, node.typeAnnotation);
+    return guard({
+      check,
+      message
+    });
+  }
+
   function returnTypeErrorMessage (path: Object, fn: Object): Object {
     const {node, scope} = path;
     const name = fn.id ? fn.id.name : '';
@@ -446,9 +529,20 @@ export default function ({types: t, template}): Object {
     );
   }
 
-  function paramTypeErrorMessage (node: Object, scope: Object): Object {
+  function paramTypeErrorMessage (node: Object, scope: Object, typeAnnotation: Object = node.typeAnnotation): Object {
     const name = node.name;
-    const message = `Value of ${node.optional ? 'optional ' : ''}argument "${name}" violates contract, expected ${humanReadableType(node.typeAnnotation, scope)} got `;
+    const message = `Value of ${node.optional ? 'optional ' : ''}argument "${name}" violates contract, expected ${humanReadableType(typeAnnotation, scope)} got `;
+
+    return t.binaryExpression(
+      '+',
+      t.stringLiteral(message),
+      readableName({input: node}).expression
+    );
+  }
+
+  function varTypeErrorMessage (node: Object, scope: Object): Object {
+    const name = node.name;
+    const message = `Value of variable "${name}" violates contract, expected ${humanReadableType(node.typeAnnotation, scope)} got `;
 
     return t.binaryExpression(
       '+',
