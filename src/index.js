@@ -1,3 +1,5 @@
+import generate from "babel-generator";
+
 /**
  * # Typecheck Transformer
  */
@@ -47,6 +49,10 @@ export default function ({types: t, template}): Object {
     }
   `);
 
+  const readableName = template(`
+    input === null ? 'null' : typeof input === 'object' && input.constructor ? input.constructor.name || '[Unknown Object]' : typeof input
+  `);
+
   const stack = [];
 
   return {
@@ -72,40 +78,48 @@ export default function ({types: t, template}): Object {
         }
       },
 
-      ReturnStatement (path: Object) {
-        const {node, parent, scope} = path;
-        const {node: {returnType}} = stack[stack.length - 1];
-        if (!returnType || node.isTypeChecked) {
-          return;
+      ReturnStatement: {
+        enter (path: Object) {
+          const {node, parent, scope} = path;
+          if (stack.length === 0) {
+            return;
+          }
+          const {node: fn} = stack[stack.length - 1];
+          const {returnType} = fn;
+          if (!returnType || node.isTypeChecked) {
+            return;
+          }
+          stack[stack.length - 1].returns++;
+          let id;
+          if (node.argument.type === 'Identifier') {
+            id = node.argument;
+          }
+          else {
+            id = scope.generateUidIdentifierBasedOnNode(node.argument);
+            scope.push({id: id});
+            path.insertBefore(t.expressionStatement(
+              t.assignmentExpression(
+                '=',
+                id,
+                node.argument
+              ))
+            );
+          }
+          const check = checkAnnotation(id, returnType, scope);
+          const ret = t.returnStatement(id);
+          ret.isTypeChecked = true;
+          if (check) {
+            path.replaceWith(thrower({
+              check,
+              ret,
+              message: returnTypeErrorMessage(path, fn)
+            }));
+          }
+          else {
+            path.replaceWith(ret);
+          }
+          //const check = checkAnnotation(returnType, )
         }
-        stack[stack.length - 1].returns++;
-        let id;
-        if (node.argument.type === 'Identifier') {
-          id = node.argument;
-        }
-        else {
-          id = scope.generateUidIdentifierBasedOnNode(node.argument);
-          scope.push({id: id});
-          path.insertBefore(t.assignmentExpression(
-            '=',
-            id,
-            node.argument
-          ));
-        }
-        const check = checkAnnotation(id, returnType, scope);
-        const ret = t.returnStatement(id);
-        ret.isTypeChecked = true;
-        if (check) {
-          path.replaceWith(thrower({
-            check,
-            ret,
-            message: t.stringLiteral("Return value violates contract.")
-          }));
-        }
-        else {
-          path.replaceWith(ret);
-        }
-        //const check = checkAnnotation(returnType, )
       }
     }
   };
@@ -126,8 +140,21 @@ export default function ({types: t, template}): Object {
       any: template(`input != null`),
       union: checkUnion,
       array: checkArray,
-      object: checkObject
+      object: checkObject,
+      nullable: checkNullable
     };
+  }
+
+  function checkNullable ({input, type, scope}): ?Object {
+    const check = checkAnnotation(input, type, scope);
+    if (!check) {
+      return;
+    }
+    return t.logicalExpression(
+      "||",
+      checks.undefined({input}).expression,
+      check
+    );
   }
 
   function checkUnion ({input, types, scope}): ?Object {
@@ -146,18 +173,18 @@ export default function ({types: t, template}): Object {
 
   function checkArray ({input, types, scope}): Object {
     if (types.length === 0) {
-      return checkIsArray(input).expression;
+      return checkIsArray({input}).expression;
     }
     else if (types.length === 1) {
       const item = t.identifier('item');
       const type = types[0];
       const check = checkAnnotation(item, type, scope);
       if (!check) {
-        return checkIsArray(input).expression;
+        return checkIsArray({input}).expression;
       }
       return t.logicalExpression(
         '&&',
-        checkIsArray(input).expression,
+        checkIsArray({input}).expression,
         t.callExpression(
           t.memberExpression(input, t.identifier('every')),
           [t.functionExpression(null, [item], t.blockStatement([
@@ -197,7 +224,7 @@ export default function ({types: t, template}): Object {
         );
       }, t.logicalExpression(
         '&&',
-        checkIsArray(input).expression,
+        checkIsArray({input}).expression,
         checkLength
       ));
     }
@@ -205,8 +232,16 @@ export default function ({types: t, template}): Object {
 
   function checkObject ({input, properties, scope}): Object {
     return properties.reduce((expr, prop, index) => {
-      const check = checkAnnotation(t.memberExpression(input, prop.key), prop.value, scope);
+      const target = t.memberExpression(input, prop.key);
+      let check = checkAnnotation(target, prop.value, scope);
       if (check) {
+        if (prop.optional) {
+          check = t.logicalExpression(
+            '||',
+            checks.undefined({input: target}).expression,
+            check
+          );
+        }
         return t.logicalExpression(
           "&&",
           expr,
@@ -247,7 +282,7 @@ export default function ({types: t, template}): Object {
           return;
         }
         else {
-          return checks.instanceof({input, type: annotation.id}).expression;
+          return checks.instanceof({input, type: createTypeExpression(annotation.id)}).expression;
         }
       case 'NumberTypeAnnotation':
       case 'NumberLiteralTypeAnnotation':
@@ -262,13 +297,75 @@ export default function ({types: t, template}): Object {
         return checks.union({input, types: annotation.types, scope});
       case 'ObjectTypeAnnotation':
         return checks.object({input, properties: annotation.properties, scope});
+      case 'FunctionTypeAnnotation':
+        return checks.function({input, params: annotation.params, returnType: annotation.returnType});
       case 'MixedTypeAnnotation':
         return checks.mixed({input});
       case 'AnyTypeAnnotation':
         return checks.any({input}).expression;
+      case 'NullableTypeAnnotation':
+        return checks.nullable({input, type: annotation.typeAnnotation, scope}).expression;
+      default:
+        console.log(annotation);
+        throw new Error('Unknown type: ' + annotation.type);
+    }
+  }
+
+  function humanReadableType (annotation: Object, scope: Object): string {
+    switch (annotation.type) {
+      case 'TypeAnnotation':
+        return humanReadableType(annotation.typeAnnotation, scope);
+      case 'GenericTypeAnnotation':
+        if (annotation.id.name === 'Array') {
+          return humanReadableArray(annotation, scope);
+        }
+        else if (annotation.id.name === 'Function') {
+          return `a function`;
+        }
+        else if (isTypeChecker(annotation.id, scope)) {
+          return `${annotation.id.name} shaped`;
+        }
+        else {
+          return `an instance of ${getTypeName(annotation.id)}`;
+        }
+      case 'NumberTypeAnnotation':
+      case 'NumberLiteralTypeAnnotation':
+        return "a number";
+      case 'BooleanTypeAnnotation':
+      case 'BooleanLiteralTypeAnnotation':
+        return "a boolean";
+      case 'StringTypeAnnotation':
+      case 'StringLiteralTypeAnnotation':
+        return "a string";
+      case 'UnionTypeAnnotation':
+        return joinSentence(annotation.types.map(type => humanReadableType(type, scope)), [', ', 'or']);
+      case 'ObjectTypeAnnotation':
+        return humanReadableObject(annotation, scope);
+      case 'FunctionTypeAnnotation':
+        return 'a function';
+      case 'MixedTypeAnnotation':
+        return "a mixed value";
+      case 'AnyTypeAnnotation':
+        return "any value";
+      case 'NullableTypeAnnotation':
+        return "an optional";
       default:
         throw new Error('Unknown type: ' + annotation.type);
     }
+  }
+
+  function humanReadableObject (annotation: Object, scope: Object): string {
+    if (annotation.properties.length === 0) {
+      return `an object`;
+    }
+    else {
+      const shape = generate(annotation).code;
+      return `an object with shape ${shape}`;
+    }
+  }
+
+  function humanReadableArray (annotation: Object, scope: Object): string {
+    return generate(annotation).code;
   }
 
   function isTypeChecker (id: Object, scope: Object): Boolean {
@@ -302,25 +399,62 @@ export default function ({types: t, template}): Object {
 
   function collectParamChecks ({node, scope}): Array {
     return node.params.map(param => {
-      if (!param.typeAnnotation) {
-        return;
+      if (param.type === 'AssignmentPattern') {
+        if (param.left.typeAnnotation) {
+          return createDefaultParamGuard(param, scope);
+        }
       }
-      return createParamGuard(param, scope);
+      else if (param.typeAnnotation) {
+        return createParamGuard(param, scope);
+      }
     }).filter(identity);
   }
 
   function createParamGuard (node: Object, scope: Object): ?Object {
-    const check = checkAnnotation(node, node.typeAnnotation, scope);
+    let check = checkAnnotation(node, node.typeAnnotation, scope);
     if (!check) {
       return;
     }
-    const message = t.stringLiteral(
-      `Argument "${node.name}" violates contract.`
-    );
+    if (node.optional) {
+      check = t.logicalExpression(
+        '||',
+        checks.undefined({input: node}).expression,
+        check
+      );
+    }
+    const message = paramTypeErrorMessage(node, scope);
     return guard({
       check,
       message
     });
+  }
+
+  function createDefaultParamGuard (node: Object, scope: Object): ?Object {
+    const {left: id, right: value} = node;
+    return createParamGuard(id, scope);
+  }
+
+  function returnTypeErrorMessage (path: Object, fn: Object): Object {
+    const {node, scope} = path;
+    const name = fn.id ? fn.id.name : '';
+    const message = `Function ${name ? `"${name}" ` : ''}return value violates contract, expected ${humanReadableType(fn.returnType, scope)} got `;
+
+    return t.binaryExpression(
+      '+',
+      t.stringLiteral(message),
+      node.argument ? readableName({input: node.argument}).expression : t.stringLiteral('undefined')
+    );
+  }
+
+  function paramTypeErrorMessage (node: Object, scope: Object): Object {
+    const name = node.name;
+    const message = `Value of ${node.optional ? 'optional ' : ''}argument "${name}" violates contract, expected ${humanReadableType(node.typeAnnotation, scope)} got `;
+
+    return t.binaryExpression(
+      '+',
+      t.stringLiteral(message),
+      readableName({input: node}).expression
+    );
   }
 
   /**
@@ -335,6 +469,56 @@ export default function ({types: t, template}): Object {
     }
     else {
       return false;
+    }
+  }
+
+  /**
+   * Convert type specifier to expression.
+   */
+  function createTypeExpression (node: Object) : Object {
+    if (node.type == 'Identifier') {
+      return node;
+    }
+    else if (node.type == 'QualifiedTypeIdentifier') {
+      return t.memberExpression(
+        createTypeExpression(node.qualification),
+        createTypeExpression(node.id)
+      );
+    }
+
+    throw this.errorWithNode(`Unsupported type: ${node.type}`);
+  }
+
+  /**
+   * Get name of a type as a string.
+   */
+  function getTypeName (node: Object): string {
+    if(node.type == 'Identifier') {
+      return node.name
+    }
+    else if(node.type == 'QualifiedTypeIdentifier') {
+      return getTypeName(node.qualification) + '.' + getTypeName(node.id);
+    }
+
+    throw this.errorWithNode(`Unsupported type: ${node.type}`);
+  }
+
+  /**
+   * Naturally join a list of terms in a sentence.
+   */
+  function joinSentence (terms: Array<string>, joiners: Array<string, string> = [', ', 'and']): string {
+    if (terms.length === 0) {
+      return '';
+    }
+    else if (terms.length === 1) {
+      return terms[0];
+    }
+    else if (terms.length === 2) {
+      return `${terms[0]} ${joiners[1]} ${terms[1]}`;
+    }
+    else {
+      const last = terms.pop();
+      return `${terms.join(joiners[0])} ${joiners[1]} ${last}`;
     }
   }
 
