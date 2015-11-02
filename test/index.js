@@ -91,8 +91,8 @@ describe('Typecheck', function () {
   failWith("Value of variable \"a\" violates contract, expected Array got string", "var-declarations-2", "abc")
   failWith("Value of variable \"b\" violates contract, expected a string got number", "var-declarations-2", ["abc", 123])
 
-  ok("arrow-function", 123)
-  ok("arrow-function-2", 123)
+  ok("arrow-function", 123);
+  ok("arrow-function-2", 123);
 
   failWith("Value of argument \"arg\" violates contract, expected a number got string", "arrow-function", "abc")
   failWith("Value of argument \"arg\" violates contract, expected a number got string", "arrow-function-2", "abc")
@@ -104,23 +104,28 @@ describe('Typecheck', function () {
   ok("rest-params", 10, 20);
   failStatic("bad-rest-params");
   failStatic("bad-rest-params-2");
+
+  ok("export-type", {name: "Bob", age: 45});
+  ok("import-type", {name: "Bob", age: 45});
+
 });
 
-
-
 function load (basename) {
+  return loadInternal(basename).exports.default;
+}
+
+function loadInternal (basename) {
   const filename = `${__dirname}/fixtures/${basename}.js`;
   const source = fs.readFileSync(filename, 'utf8');
   const transformed = transform(source, {
-    presets: ["es2015"],
+    filename: filename,
+    presets: [
+      "stage-1",
+      "es2015",
+      "react"
+    ],
     plugins: [
-      "syntax-flow",
-      "syntax-jsx",
-      typecheck,
-      "transform-es2015-parameters",
-      "transform-es2015-modules-commonjs",
-      "transform-react-jsx",
-      "transform-flow-strip-types"
+      typecheck
     ]
   });
   console.log(transformed.code);
@@ -130,9 +135,17 @@ function load (basename) {
   if (process.env.TYPECHECK_SAVE_TRANSFORMED) {
     fs.writeFileSync(`${__dirname}/fixtures/${basename}.js.transformed`, transformed.code, 'utf8');
   }
-  const loaded = new Function('module', 'exports', transformed.code);
-  loaded(context, context.exports);
-  return context.exports.default;
+  const loaded = new Function('module', 'exports', 'require', transformed.code);
+  loaded(context, context.exports, (path) => {
+    if (/^\.\//.test(path)) {
+      const module = loadInternal(path.slice(2));
+      return module.exports;
+    }
+    else {
+      return require(path);
+    }
+  });
+  return context;
 }
 
 

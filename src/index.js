@@ -29,9 +29,14 @@ export default function ({types: t, template}): Object {
   const checkNotNull = template(`input != null`);
 
   const declareTypeChecker = template(`
-    let id = function id (input) {
-      return check;
-    };
+    const id = (function () {
+      function id (input) {
+        return check;
+      }
+
+      id[Symbol.hasInstance] = id;
+      return id;
+    })();
   `);
 
   const guard = template(`
@@ -76,7 +81,14 @@ export default function ({types: t, template}): Object {
 
       ImportDeclaration: {
         enter (path: Object) {
-          console.log(path.node);
+          const {node, scope} = path;
+          if (node.importKind === 'type') {
+            // @fixme
+            console.log(node);
+          }
+          else if (node.importKind === 'typeof') {
+            // @fixme
+          }
         }
       },
 
@@ -86,7 +98,7 @@ export default function ({types: t, template}): Object {
           const paramChecks = collectParamChecks(path);
           if (node.type === "ArrowFunctionExpression" && node.expression) {
             node.expression = false;
-            node.body = t.blockStatement(t.returnStatement(node.body));
+            node.body = t.blockStatement([t.returnStatement(node.body)]);
           }
           node.body.body.unshift(...paramChecks);
           stack.push({node, returns: 0});
