@@ -23,6 +23,7 @@ export default function ({types: t, template}): Object {
   ];
 
   const checks = createChecks();
+  const staticChecks = createStaticChecks();
 
   const checkIsArray = template(`Array.isArray(input)`);
   const checkIsObject = template(`input != null && typeof input === 'object'`);
@@ -84,7 +85,6 @@ export default function ({types: t, template}): Object {
           const {node, scope} = path;
           if (node.importKind === 'type') {
             // @fixme
-            console.log(node);
           }
           else if (node.importKind === 'typeof') {
             // @fixme
@@ -101,11 +101,15 @@ export default function ({types: t, template}): Object {
             node.body = t.blockStatement([t.returnStatement(node.body)]);
           }
           node.body.body.unshift(...paramChecks);
-          stack.push({node, returns: 0});
+          const isVoid = node.returnType ? maybeNullableAnnotation(node.returnType) : null;
+
+          stack.push({node, returns: 0, isVoid, type: node.returnType});
         },
-        exit () {
-          const {node, returns} = stack.pop();
-          console.log({returns});
+        exit (path: Object) {
+          const {node, returns, isVoid, type} = stack.pop();
+          if (isVoid === false && returns === 0) {
+            throw new SyntaxError(`Function ${node.id ? `"${node.id.name}" ` : ''}did not return a value, expected ${humanReadableType(type, path.scope)}`);
+          }
         }
       },
 
@@ -121,13 +125,26 @@ export default function ({types: t, template}): Object {
           if (!returnType) {
             return;
           }
-
+          if (!node.argument) {
+            if (maybeNullableAnnotation(returnType) === false) {
+              throw new SyntaxError(`Function ${fn.id ? `"${fn.id.name}" ` : ''}did not return a value, expected ${humanReadableType(returnType, path.scope)}`);
+            }
+            return;
+          }
           let id;
           if (node.argument.type === 'Identifier') {
             id = node.argument;
           }
           else {
             id = scope.generateUidIdentifierBasedOnNode(node.argument);
+          }
+
+          const ok = staticCheckAnnotation(path.get("argument"), returnType);
+          if (ok === true) {
+            return;
+          }
+          else if (ok === false) {
+            throw new SyntaxError(`Invalid return type, expected ${humanReadableType(returnType, scope)}`);
           }
           const check = checkAnnotation(id, returnType, scope);
           if (!check) {
@@ -180,12 +197,21 @@ export default function ({types: t, template}): Object {
         enter (path: Object) {
           const {node, scope} = path;
           const collected = [];
-          for (let declaration of node.declarations) {
+          for (let i = 0; i < node.declarations.length; i++) {
+            const declaration = node.declarations[i];
             const {id, init} = declaration;
             if (!id.typeAnnotation || id.hasBeenTypeChecked) {
               continue;
             }
+            id.savedTypeAnnotation = id.typeAnnotation;
             id.hasBeenTypeChecked = true;
+            const ok = staticCheckAnnotation(path.get("declarations")[i], id.typeAnnotation);
+            if (ok === true) {
+              continue;
+            }
+            else if (ok === false) {
+              throw new SyntaxError(`Invalid assignment value, expected ${humanReadableType(id.typeAnnotation, scope)}`);
+            }
             const check = checkAnnotation(id, id.typeAnnotation, scope);
             if (check) {
               collected.push(guard({
@@ -206,6 +232,62 @@ export default function ({types: t, template}): Object {
               path.replaceWith(t.blockStatement([node, check]));
             }
           }
+        }
+      },
+
+      AssignmentExpression: {
+        enter (path: Object) {
+          const {node, scope} = path;
+          const binding = scope.getBinding(node.left.name);
+          if (!binding || binding.path.type !== 'VariableDeclarator') {
+            return;
+          }
+          let annotation = path.get('left').getTypeAnnotation();
+          if (annotation.type === 'AnyTypeAnnotation') {
+            annotation = binding.path.get('id').node.savedTypeAnnotation;
+          }
+          node.hasBeenTypeChecked = true;
+          node.left.hasBeenTypeChecked = true;
+          const id = node.left;
+          const ok = staticCheckAnnotation(path.get("right"), annotation);
+          if (ok === true) {
+            return;
+          }
+          else if (ok === false) {
+            throw new SyntaxError(`Invalid assignment value, expected ${humanReadableType(annotation, scope)}`);
+          }
+          const check = checkAnnotation(id, annotation, scope);
+          if (check) {
+            path.insertAfter(guard({
+              check,
+              message: varTypeErrorMessage(id, scope)
+            }));
+          }
+          console.log(annotation);
+        }
+      },
+
+      TypeCastExpression: {
+        enter (path: Object) {
+          const {node} = path;
+          let target;
+          switch (node.expression.type) {
+            case 'Identifier':
+              target = node.expression;
+              break;
+            case 'AssignmentExpression':
+              target = node.expression.left;
+              break;
+            default:
+              // unsupported.
+              return;
+          }
+          console.log(target);
+          const binding = path.scope.getBinding(target.name);
+          if (!binding) {
+            return;
+          }
+          console.log(binding.constantViolations.map(node => node));
         }
       }
     }
@@ -230,6 +312,94 @@ export default function ({types: t, template}): Object {
       object: checkObject,
       nullable: checkNullable
     };
+  }
+
+  function createStaticChecks (): Object {
+    return {
+      string (path) {
+        return maybeStringAnnotation(path.getTypeAnnotation());
+      },
+      number (path) {
+        return maybeNumberAnnotation(path.getTypeAnnotation());
+      },
+      boolean (path) {
+        return maybeBooleanAnnotation(path.getTypeAnnotation());
+      },
+      function (path) {
+        return maybeFunctionAnnotation(path.getTypeAnnotation());
+      },
+      nullable (path) {
+        return maybeNullableAnnotation(path.getTypeAnnotation());
+      },
+      any (path) {
+        const result = maybeNullableAnnotation(path.getTypeAnnotation());
+        if (result === false) {
+          return true;
+        }
+        else if (result === true) {
+          return false;
+        }
+        else {
+          return null;
+        }
+      },
+      instanceof ({path, type}) {
+        const {node, scope} = path;
+        if (type.name === 'Object' && !scope.hasBinding('Object') && node.type === 'ObjectExpression') {
+          return true;
+        }
+        return maybeInstanceOfAnnotation(path.getTypeAnnotation(), type);
+      },
+      type ({path, type}) {
+        console.log('TYPE', path.node.type);
+      },
+      array ({path, types}) {
+        const {node} = path;
+        if (node.type === 'ArrayExpression') {
+          return true;
+        }
+        return maybeArrayAnnotation(path.getTypeAnnotation());
+      },
+      union: checkStaticUnion,
+      object: checkStaticObject,
+      nullable: checkStaticNullable,
+    };
+  }
+
+  function checkStaticUnion ({path, types}) {
+    let falseCount = 0;
+    let nullCount = 0;
+    for (let type of types) {
+      const result = staticCheckAnnotation(path, type);
+      if (result === true) {
+        return true;
+      }
+      else if (result === false) {
+        falseCount++;
+      }
+      else {
+        nullCount++;
+      }
+    }
+    if (falseCount === types.length) {
+      return false;
+    }
+    else {
+      return null;
+    }
+  }
+
+  function checkStaticObject ({path, type}) {
+  }
+
+  function checkStaticNullable ({path, type}): ? boolean {
+    const annotation = path.getTypeAnnotation();
+    if (annotation.type === 'VoidTypeAnnotation' || annotation.type === 'NullableTypeAnnotation') {
+      return true;
+    }
+    else {
+      return staticCheckAnnotation(path, type);
+    }
   }
 
   function checkNullable ({input, type, scope}): ?Object {
@@ -392,9 +562,303 @@ export default function ({types: t, template}): Object {
         return checks.any({input}).expression;
       case 'NullableTypeAnnotation':
         return checks.nullable({input, type: annotation.typeAnnotation, scope}).expression;
+      case 'VoidTypeAnnotation':
+        return checks.undefined({input}).expression;
       default:
         console.log(annotation);
         throw new Error('Unknown type: ' + annotation.type);
+    }
+  }
+
+  function staticCheckAnnotation (path: Object, annotation: Object) {
+    switch (annotation.type) {
+      case 'TypeAnnotation':
+        return staticCheckAnnotation(path, annotation.typeAnnotation);
+      case 'GenericTypeAnnotation':
+        if (annotation.id.name === 'Array') {
+          return staticChecks.array({path, types: annotation.typeParameters ? annotation.typeParameters.params : []});
+        }
+        else if (annotation.id.name === 'Function') {
+          return staticChecks.function(path);
+        }
+        else if (isTypeChecker(annotation.id, path.scope)) {
+          return staticChecks.type({path, type: annotation.id});
+        }
+        else if (isGenericType(annotation.id, path.scope)) {
+          return;
+        }
+        else {
+          return staticChecks.instanceof({path, type: createTypeExpression(annotation.id)});
+        }
+      case 'NumberTypeAnnotation':
+      case 'NumberLiteralTypeAnnotation':
+        return staticChecks.number(path);
+      case 'BooleanTypeAnnotation':
+      case 'BooleanLiteralTypeAnnotation':
+        return staticChecks.boolean(path);
+      case 'StringTypeAnnotation':
+      case 'StringLiteralTypeAnnotation':
+        return staticChecks.string(path);
+      case 'UnionTypeAnnotation':
+        return staticChecks.union({path, types: annotation.types});
+      case 'ObjectTypeAnnotation':
+        return staticChecks.object({path, properties: annotation.properties});
+      case 'FunctionTypeAnnotation':
+        return staticChecks.function({path, params: annotation.params, returnType: annotation.returnType});
+      case 'MixedTypeAnnotation':
+        return true;
+      case 'AnyTypeAnnotation':
+        return staticChecks.any(path);
+      case 'NullableTypeAnnotation':
+        return staticChecks.nullable({path, type: annotation.typeAnnotation});
+      case 'VoidTypeAnnotation':
+        return staticChecks.undefined(path);
+      default:
+        console.log(annotation);
+        throw new Error('Unknown type: ' + annotation.type);
+    }
+  }
+
+  /**
+   * Returns `true` if the annotation is definitely for an array,
+   * otherwise `false`.
+   */
+  function isStrictlyArrayAnnotation (annotation: Object): boolean {
+    switch (annotation.type) {
+      case 'TypeAnnotation':
+        return isStrictlyArrayAnnotation(annotation.typeAnnotation);
+      case 'GenericTypeAnnotation':
+        return annotation.id.name === 'Array';
+      case 'UnionTypeAnnotation':
+        return annotation.types.every(isStrictlyArrayAnnotation);
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Returns `true` if the annotation is compatible with a number,
+   * `false` if it definitely isn't, or `null` if we're not sure.
+   */
+  function maybeNumberAnnotation (annotation: Object): ?boolean {
+    switch (annotation.type) {
+      case 'TypeAnnotation':
+      case 'NullableTypeAnnotation':
+        return maybeNumberAnnotation(annotation.typeAnnotation);
+      case 'NumberTypeAnnotation':
+      case 'NumberLiteralTypeAnnotation':
+        return true;
+      case 'GenericTypeAnnotation':
+        switch (annotation.id.name) {
+          case 'Array':
+          case 'Function':
+          case 'Object':
+          case 'String':
+          case 'Boolean':
+          case 'Date':
+          case 'RegExp':
+            return false;
+          default:
+            return null;
+        }
+      case 'UnionTypeAnnotation':
+        return annotation.types.some(type => maybeNumberAnnotation(type) !== false);
+      case 'AnyTypeAnnotation':
+      case 'MixedTypeAnnotation':
+        return null;
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Returns `true` if the annotation is compatible with a string,
+   * `false` if it definitely isn't, or `null` if we're not sure.
+   */
+  function maybeStringAnnotation (annotation: Object): ?boolean {
+    switch (annotation.type) {
+      case 'TypeAnnotation':
+      case 'NullableTypeAnnotation':
+        return maybeStringAnnotation(annotation.typeAnnotation);
+      case 'StringTypeAnnotation':
+      case 'StringLiteralTypeAnnotation':
+        return true;
+      case 'GenericTypeAnnotation':
+        switch (annotation.id.name) {
+          case 'Array':
+          case 'Function':
+          case 'Object':
+          case 'Number':
+          case 'Boolean':
+          case 'Date':
+          case 'RegExp':
+            return false;
+          default:
+            return null;
+        }
+      case 'UnionTypeAnnotation':
+        return annotation.types.some(type => maybeStringAnnotation(type) !== false);
+      case 'AnyTypeAnnotation':
+      case 'MixedTypeAnnotation':
+        return null;
+      default:
+        return false;
+    }
+  }
+
+
+  /**
+   * Returns `true` if the annotation is compatible with a boolean,
+   * `false` if it definitely isn't, or `null` if we're not sure.
+   */
+  function maybeBooleanAnnotation (annotation: Object): ?boolean {
+    switch (annotation.type) {
+      case 'TypeAnnotation':
+      case 'NullableTypeAnnotation':
+        return maybeBooleanAnnotation(annotation.typeAnnotation);
+      case 'BooleanTypeAnnotation':
+      case 'BooleanLiteralTypeAnnotation':
+        return true;
+      case 'GenericTypeAnnotation':
+        switch (annotation.id.name) {
+          case 'Array':
+          case 'Function':
+          case 'Object':
+          case 'String':
+          case 'Number':
+          case 'Date':
+          case 'RegExp':
+            return false;
+          default:
+            return null;
+        }
+      case 'UnionTypeAnnotation':
+        return annotation.types.some(type => maybeBooleanAnnotation(type) !== false);
+      case 'AnyTypeAnnotation':
+      case 'MixedTypeAnnotation':
+        return null;
+      default:
+        return false;
+    }
+  }
+
+
+  /**
+   * Returns `true` if the annotation is compatible with a function,
+   * `false` if it definitely isn't, or `null` if we're not sure.
+   */
+  function maybeFunctionAnnotation (annotation: Object): ?boolean {
+    switch (annotation.type) {
+      case 'TypeAnnotation':
+      case 'NullableTypeAnnotation':
+        return maybeFunctionAnnotation(annotation.typeAnnotation);
+      case 'FunctionTypeAnnotation':
+        return true;
+      case 'GenericTypeAnnotation':
+        switch (annotation.id.name) {
+          case 'Array':
+          case 'Number':
+          case 'Object':
+          case 'String':
+          case 'Boolean':
+          case 'Date':
+          case 'RegExp':
+            return false;
+          default:
+            return null;
+        }
+      case 'UnionTypeAnnotation':
+        return annotation.types.some(type => maybeFunctionAnnotation(type) !== false);
+      case 'AnyTypeAnnotation':
+      case 'MixedTypeAnnotation':
+        return null;
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Returns `true` if the annotation is compatible with an undefined or null type,
+   * `false` if it definitely isn't, or `null` if we're not sure.
+   */
+  function maybeNullableAnnotation (annotation: Object): ?boolean {
+    switch (annotation.type) {
+      case 'NullableTypeAnnotation':
+      case 'VoidTypeAnnotation':
+      case 'MixedTypeAnnotation':
+        return true;
+      case 'TypeAnnotation':
+        return maybeNullableAnnotation(annotation.typeAnnotation);
+      case 'GenericTypeAnnotation':
+        switch (annotation.id.name) {
+          case 'Array':
+          case 'Number':
+          case 'Object':
+          case 'String':
+          case 'Boolean':
+          case 'Date':
+          case 'RegExp':
+            return false;
+          default:
+            return null;
+        }
+      case 'UnionTypeAnnotation':
+        return annotation.types.some(type => maybeNullableAnnotation(type) !== false);
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Returns `true` if the annotation is compatible with an object type,
+   * `false` if it definitely isn't, or `null` if we're not sure.
+   */
+  function maybeInstanceOfAnnotation (annotation: Object, expected: Object): ?boolean {
+    switch (annotation.type) {
+      case 'TypeAnnotation':
+      case 'NullableTypeAnnotation':
+        return maybeInstanceOfAnnotation(annotation.typeAnnotation);
+      case 'GenericTypeAnnotation':
+        if (annotation.id.name === expected.name) {
+          return true;
+        }
+        else {
+          return null;
+        }
+      case 'UnionTypeAnnotation':
+        return annotation.types.some(type => maybeInstanceOfAnnotation(type, expected) !== false);
+      case 'VoidTypeAnnotation':
+      case 'BooleanTypeAnnotation':
+      case 'BooleanLiteralTypeAnnotation':
+      case 'StringTypeAnnotation':
+      case 'StringLiteralTypeAnnotation':
+      case 'NumberTypeAnnotation':
+      case 'NumberLiteralTypeAnnotation':
+      case 'FunctionTypeAnnotation':
+        return false;
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Returns `true` if the annotation is compatible with an array,
+   * `false` if it definitely isn't, or `null` if we're not sure.
+   */
+  function maybeArrayAnnotation (annotation: Object): ?boolean {
+    switch (annotation.type) {
+      case 'TypeAnnotation':
+      case 'NullableTypeAnnotation':
+        return maybeArrayAnnotation(annotation.typeAnnotation);
+      case 'GenericTypeAnnotation':
+        return annotation.id.name === 'Array';
+      case 'UnionTypeAnnotation':
+        return annotation.types.some(maybeArrayAnnotation);
+      case 'AnyTypeAnnotation':
+      case 'MixedTypeAnnotation':
+        return null;
+      default:
+        return false;
     }
   }
 
@@ -435,7 +899,7 @@ export default function ({types: t, template}): Object {
       case 'AnyTypeAnnotation':
         return "any value";
       case 'NullableTypeAnnotation':
-        return "an optional";
+        return `optional ${humanReadableType(annotation.typeAnnotation, scope)}`;
       default:
         throw new Error('Unknown type: ' + annotation.type);
     }
@@ -484,26 +948,30 @@ export default function ({types: t, template}): Object {
     return false;
   }
 
-  function collectParamChecks ({node, scope}): Array {
-    return node.params.map(param => {
-      if (param.type === 'AssignmentPattern') {
-        if (param.left.typeAnnotation) {
-          return createDefaultParamGuard(param, scope);
+  function collectParamChecks (path: Object): Array {
+    return path.get('params').map((param) => {
+      const {node} = param;
+      if (node.type === 'AssignmentPattern') {
+        if (node.left.typeAnnotation) {
+          return createDefaultParamGuard(param);
         }
       }
-      else if (param.type === 'RestElement') {
-        if (param.typeAnnotation) {
-          return createRestParamGuard(param, scope);
+      else if (node.type === 'RestElement') {
+        if (node.typeAnnotation) {
+          return createRestParamGuard(param);
         }
       }
-      else if (param.typeAnnotation) {
-        return createParamGuard(param, scope);
+      else if (node.typeAnnotation) {
+        return createParamGuard(param);
       }
     }).filter(identity);
   }
 
-  function createParamGuard (node: Object, scope: Object): ?Object {
+  function createParamGuard (path: Object): ?Object {
+    const {node, scope} = path;
+
     node.hasBeenTypeChecked = true;
+    node.savedTypeAnnotation = node.typeAnnotation;
     let check = checkAnnotation(node, node.typeAnnotation, scope);
     if (!check) {
       return;
@@ -522,14 +990,24 @@ export default function ({types: t, template}): Object {
     });
   }
 
-  function createDefaultParamGuard (node: Object, scope: Object): ?Object {
+  function createDefaultParamGuard (path: Object): ?Object {
+    const {node, scope} = path;
     const {left: id, right: value} = node;
-    return createParamGuard(id, scope);
+    const ok = staticCheckAnnotation(path.get('right'), id.typeAnnotation);
+    if (ok === false) {
+      throw new SyntaxError(`Invalid default value for argument "${id.name}", expected ${humanReadableType(id.typeAnnotation, scope)}.`);
+    }
+    return createParamGuard({node: id, scope});
   }
 
-  function createRestParamGuard (node: Object, scope: Object): ?Object {
+  function createRestParamGuard (path: Object): ?Object {
+    const {node, scope} = path;
     const {argument: id} = node;
     id.hasBeenTypeChecked = true;
+    node.savedTypeAnnotation = node.typeAnnotation;
+    if (!isStrictlyArrayAnnotation(node.typeAnnotation)) {
+      throw new SyntaxError(`Invalid type annotation for rest argument "${id.name}", expected an Array, got: ${humanReadableType(node.typeAnnotation, scope)}.`);
+    }
     let check = checkAnnotation(id, node.typeAnnotation, scope);
     if (!check) {
       return;

@@ -9,6 +9,12 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok("assignment-expression", [1, 2, 3]);
+  //return;
+  failStatic("bad-array-return-value");
+  failStatic("bad-function-return-value");
+
+  //return;
   ok("type-aliases", "foo", "bar", {foo: "foo", bar: 123});
   ok("generic-function", 123);
   ok("fancy-generic-function", Buffer(123), (value) => value);
@@ -128,7 +134,6 @@ function loadInternal (basename) {
       typecheck
     ]
   });
-  console.log(transformed.code);
   const context = {
     exports: {}
   };
@@ -193,14 +198,19 @@ function failWith (errorMessage, basename, ...args) {
 
 
 function failStatic (basename, ...args) {
-  return; // @fixme re-enable
   it(`should refuse to load '${basename}'`, function () {
     let failed = false;
     try {
       load(basename)(...args);
     }
     catch (e) {
-      failed = e instanceof SyntaxError;
+      if (e instanceof SyntaxError) {
+        failed = true;
+        console.log(e.toString());
+      }
+      else {
+        throw e;
+      }
     }
     if (!failed) {
       throw new Error(`Test '${basename}' should have failed static verification but did not.`);
