@@ -102,7 +102,7 @@ export default function ({types: t, template}): Object {
           }
           node.body.body.unshift(...paramChecks);
           const isVoid = node.returnType ? maybeNullableAnnotation(node.returnType) : null;
-
+          node.savedTypeAnnotation = node.returnType;
           stack.push({node, returns: 0, isVoid, type: node.returnType});
         },
         exit (path: Object) {
@@ -138,7 +138,6 @@ export default function ({types: t, template}): Object {
           else {
             id = scope.generateUidIdentifierBasedOnNode(node.argument);
           }
-
           const ok = staticCheckAnnotation(path.get("argument"), returnType);
           if (ok === true) {
             return;
@@ -197,6 +196,7 @@ export default function ({types: t, template}): Object {
         enter (path: Object) {
           const {node, scope} = path;
           const collected = [];
+          const declarations = path.get("declarations");
           for (let i = 0; i < node.declarations.length; i++) {
             const declaration = node.declarations[i];
             const {id, init} = declaration;
@@ -205,7 +205,7 @@ export default function ({types: t, template}): Object {
             }
             id.savedTypeAnnotation = id.typeAnnotation;
             id.hasBeenTypeChecked = true;
-            const ok = staticCheckAnnotation(path.get("declarations")[i], id.typeAnnotation);
+            const ok = staticCheckAnnotation(declarations[i], id.typeAnnotation);
             if (ok === true) {
               continue;
             }
@@ -244,12 +244,14 @@ export default function ({types: t, template}): Object {
           }
           let annotation = path.get('left').getTypeAnnotation();
           if (annotation.type === 'AnyTypeAnnotation') {
-            annotation = binding.path.get('id').node.savedTypeAnnotation;
+            const item = binding.path.get('id');
+            annotation = item.node.savedTypeAnnotation || item.getTypeAnnotation();
           }
           node.hasBeenTypeChecked = true;
           node.left.hasBeenTypeChecked = true;
           const id = node.left;
-          const ok = staticCheckAnnotation(path.get("right"), annotation);
+          const right = path.get('right');
+          const ok = staticCheckAnnotation(right, annotation);
           if (ok === true) {
             return;
           }
@@ -257,13 +259,15 @@ export default function ({types: t, template}): Object {
             throw new SyntaxError(`Invalid assignment value, expected ${humanReadableType(annotation, scope)}`);
           }
           const check = checkAnnotation(id, annotation, scope);
+          if (!id.typeAnnotation) {
+            id.typeAnnotation = annotation;
+          }
           if (check) {
             path.insertAfter(guard({
               check,
               message: varTypeErrorMessage(id, scope)
             }));
           }
-          console.log(annotation);
         }
       },
 
@@ -282,12 +286,11 @@ export default function ({types: t, template}): Object {
               // unsupported.
               return;
           }
-          console.log(target);
-          const binding = path.scope.getBinding(target.name);
-          if (!binding) {
+          const id = path.scope.getBindingIdentifier(target.name);
+          if (!id) {
             return;
           }
-          console.log(binding.constantViolations.map(node => node));
+          id.savedTypeAnnotation = path.getTypeAnnotation();
         }
       }
     }
@@ -317,22 +320,22 @@ export default function ({types: t, template}): Object {
   function createStaticChecks (): Object {
     return {
       string (path) {
-        return maybeStringAnnotation(path.getTypeAnnotation());
+        return maybeStringAnnotation(getAnnotation(path));
       },
       number (path) {
-        return maybeNumberAnnotation(path.getTypeAnnotation());
+        return maybeNumberAnnotation(getAnnotation(path));
       },
       boolean (path) {
-        return maybeBooleanAnnotation(path.getTypeAnnotation());
+        return maybeBooleanAnnotation(getAnnotation(path));
       },
       function (path) {
-        return maybeFunctionAnnotation(path.getTypeAnnotation());
+        return maybeFunctionAnnotation(getAnnotation(path));
       },
       nullable (path) {
-        return maybeNullableAnnotation(path.getTypeAnnotation());
+        return maybeNullableAnnotation(getAnnotation(path));
       },
       any (path) {
-        const result = maybeNullableAnnotation(path.getTypeAnnotation());
+        const result = maybeNullableAnnotation(getAnnotation(path));
         if (result === false) {
           return true;
         }
@@ -348,7 +351,7 @@ export default function ({types: t, template}): Object {
         if (type.name === 'Object' && !scope.hasBinding('Object') && node.type === 'ObjectExpression') {
           return true;
         }
-        return maybeInstanceOfAnnotation(path.getTypeAnnotation(), type);
+        return maybeInstanceOfAnnotation(getAnnotation(path), type);
       },
       type ({path, type}) {
         console.log('TYPE', path.node.type);
@@ -358,7 +361,7 @@ export default function ({types: t, template}): Object {
         if (node.type === 'ArrayExpression') {
           return true;
         }
-        return maybeArrayAnnotation(path.getTypeAnnotation());
+        return maybeArrayAnnotation(getAnnotation(path));
       },
       union: checkStaticUnion,
       object: checkStaticObject,
@@ -393,7 +396,7 @@ export default function ({types: t, template}): Object {
   }
 
   function checkStaticNullable ({path, type}): ? boolean {
-    const annotation = path.getTypeAnnotation();
+    const annotation = getAnnotation(path);
     if (annotation.type === 'VoidTypeAnnotation' || annotation.type === 'NullableTypeAnnotation') {
       return true;
     }
@@ -617,6 +620,42 @@ export default function ({types: t, template}): Object {
         console.log(annotation);
         throw new Error('Unknown type: ' + annotation.type);
     }
+  }
+
+  /**
+   * Get the type annotation for a given node.
+   */
+  function getAnnotation (path: Object) {
+    let id;
+    if (path.type === 'Identifier') {
+      id = path.scope.getBindingIdentifier(path.node.name);
+    }
+    else if (path.type === 'CallExpression') {
+      const callee = path.get('callee');
+      if (callee.type === 'Identifier') {
+        const fn = getFunctionForIdentifier(callee);
+        if (fn) {
+          id = fn.node;
+        }
+      }
+    }
+    if (id) {
+      return id.savedTypeAnnotation || id.returnType || id.typeAnnotation || path.getTypeAnnotation();
+    }
+    else {
+      return path.getTypeAnnotation();
+    }
+  }
+
+  function getFunctionForIdentifier (path: Object): boolean|Object {
+    if (path.type !== 'Identifier') {
+      return false;
+    }
+    const ref = path.scope.getBinding(path.node.name);
+    if (!ref) {
+      return false;
+    }
+    return t.isFunction(ref.path.parent) && ref.path.parentPath;
   }
 
   /**
@@ -990,6 +1029,23 @@ export default function ({types: t, template}): Object {
     });
   }
 
+  /**
+   * Get any constant violations before a given node.
+   * @fixme this is a copy of the internal babel api and relies on a private method.
+   */
+  function getConstantViolationsBefore (binding, path, functions) {
+    const violations = binding.constantViolations.slice();
+    violations.unshift(binding.path);
+    return violations.filter(violation => {
+      violation = violation.resolve();
+      const status = violation._guessExecutionStatusRelativeTo(path);
+      if (functions && status === "function") {
+        functions.push(violation);
+      }
+      return status === "before";
+    });
+  }
+
   function createDefaultParamGuard (path: Object): ?Object {
     const {node, scope} = path;
     const {left: id, right: value} = node;
@@ -1052,7 +1108,6 @@ export default function ({types: t, template}): Object {
   function varTypeErrorMessage (node: Object, scope: Object): Object {
     const name = node.name;
     const message = `Value of variable "${name}" violates contract, expected ${humanReadableType(node.typeAnnotation, scope)} got `;
-
     return t.binaryExpression(
       '+',
       t.stringLiteral(message),

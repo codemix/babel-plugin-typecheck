@@ -9,12 +9,17 @@ else {
 }
 
 describe('Typecheck', function () {
+
+  ok("conditional-return-value");
+  failStatic("bad-conditional-return-value");
+
+  failWith("Function \"demo\" return value violates contract, expected a number or a string got Object", "conditional-return-value", {a: 123});
+
+
   ok("assignment-expression", [1, 2, 3]);
-  //return;
   failStatic("bad-array-return-value");
   failStatic("bad-function-return-value");
 
-  //return;
   ok("type-aliases", "foo", "bar", {foo: "foo", bar: 123});
   ok("generic-function", 123);
   ok("fancy-generic-function", Buffer(123), (value) => value);
@@ -31,7 +36,6 @@ describe('Typecheck', function () {
   failWith("Value of argument \"input\" violates contract, expected an object with shape { greeting: string; id: number; } got Object", "complex-object-types", {foo: "bar"});
   failWith("Value of argument \"input\" violates contract, expected an object with shape { greeting: string; id: number; } got string", "complex-object-types", "foo");
 
-  ok("conditional-return-value");
   ok("any-return-value");
   ok("callexpr-return-value");
   ok("binary-return-value");
@@ -65,7 +69,6 @@ describe('Typecheck', function () {
   ok("bug-7-class-support");
   ok("bug-8-class-support");
 
-  failWith("Function \"demo\" return value violates contract, expected a number or a string got Object", "conditional-return-value", {a: 123});
 
   ok("optional-properties", {greeting: "hello world", id: 123});
   ok("optional-properties", {greeting: "hello world"});

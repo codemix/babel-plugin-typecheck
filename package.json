@@ -7,7 +7,7 @@
     "build": "babel -d ./lib ./src",
     "prepublish": "npm run build",
     "pretest": "npm run build",
-    "test": "mocha",
+    "test": "mocha ./test/index.js",
     "watch": "NODE_WATCH=1 mocha --watch"
   },
   "repository": {
