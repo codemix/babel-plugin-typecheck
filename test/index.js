@@ -10,6 +10,8 @@ else {
 
 describe('Typecheck', function () {
 
+  ok("return-regexp");
+
   ok("conditional-return-value");
   failStatic("bad-conditional-return-value");
 
