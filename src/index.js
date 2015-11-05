@@ -331,9 +331,6 @@ export default function ({types: t, template}): Object {
       function (path) {
         return maybeFunctionAnnotation(getAnnotation(path));
       },
-      nullable (path) {
-        return maybeNullableAnnotation(getAnnotation(path));
-      },
       any (path) {
         const result = maybeNullableAnnotation(getAnnotation(path));
         if (result === false) {
