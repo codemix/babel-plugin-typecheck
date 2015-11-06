@@ -262,8 +262,9 @@ export default function ({types: t, template}): Object {
           if (!id.typeAnnotation) {
             id.typeAnnotation = annotation;
           }
+          id.hasBeenTypeChecked = true;
           if (check) {
-            path.insertAfter(guard({
+            path.getStatementParent().insertAfter(guard({
               check,
               message: varTypeErrorMessage(id, scope)
             }));
@@ -312,6 +313,7 @@ export default function ({types: t, template}): Object {
       any: template(`input != null`),
       union: checkUnion,
       array: checkArray,
+      tuple: checkTuple,
       object: checkObject,
       nullable: checkNullable
     };
@@ -332,16 +334,7 @@ export default function ({types: t, template}): Object {
         return maybeFunctionAnnotation(getAnnotation(path));
       },
       any (path) {
-        const result = maybeNullableAnnotation(getAnnotation(path));
-        if (result === false) {
-          return true;
-        }
-        else if (result === true) {
-          return false;
-        }
-        else {
-          return null;
-        }
+        return null;
       },
       instanceof ({path, type}) {
         const {node, scope} = path;
@@ -356,14 +349,177 @@ export default function ({types: t, template}): Object {
       array ({path, types}) {
         const {node} = path;
         if (node.type === 'ArrayExpression') {
-          return true;
+          if (types.length === 0) {
+            return true;
+          }
+          else if (node.elements.length >= types.length) {
+            console.log('aaa', getAnnotation(path));
+          }
         }
-        return maybeArrayAnnotation(getAnnotation(path));
+        else if (maybeArrayAnnotation(getAnnotation(path)) === false) {
+          return false;
+        }
+        else {
+          return null;
+        }
+      },
+      tuple ({path, types}) {
+        const {node} = path;
+        let annotation = getAnnotation(path);
+        if (annotation.type === 'TypeAnnotation' || annotation.type === 'NullableTypeAnnotation') {
+          annotation = annotation.typeAnnotation;
+        }
+        //return maybeTupleAnnotation(getAnnotation(path));
       },
       union: checkStaticUnion,
       object: checkStaticObject,
       nullable: checkStaticNullable,
     };
+  }
+
+  function compareAnnotations (a: Object, b: Object): ?boolean {
+
+    if (a.type === 'TypeAnnotation') {
+      a = a.typeAnnotation;
+    }
+    if (b.type === 'TypeAnnotation') {
+      b = b.typeAnnotation;
+    }
+    switch (a.type) {
+      case 'StringTypeAnnotation':
+      case 'StringLiteralTypeAnnotation':
+        return maybeStringAnnotation(b);
+      case 'NumberTypeAnnotation':
+      case 'NumericLiteralTypeAnnotation':
+        return maybeNumberAnnotation(b);
+      case 'BooleanTypeAnnotation':
+      case 'BooleanLiteralTypeAnnotation':
+        return maybeBooleanAnnotation(b);
+      case 'FunctionTypeAnnotation':
+        return maybeFunctionAnnotation(b);
+      case 'AnyTypeAnnotation':
+        if (b.type === 'AnyTypeAnnotation') {
+          return null;
+        }
+        return !maybeNullableAnnotation(b);
+      case 'MixedTypeAnnotation':
+        return true;
+      case 'ObjectTypeAnnotation':
+        return compareObjectAnnotation(a, b);
+      case 'GenericTypeAnnotation':
+        return compareGenericAnnotation(a, b);
+      case 'TupleTypeAnnotation':
+        return compareTupleAnnotation(a, b);
+      case 'UnionTypeAnnotation':
+        return compareUnionAnnotation(a, b);
+      case 'NullableTypeAnnotation':
+        return compareNullableAnnotation(a, b);
+      default:
+        return null;
+    }
+  }
+
+  function compareObjectAnnotation (a: Object, b: Object): ?boolean {
+    switch (b.type) {
+      case 'TypeAnnotation':
+      case 'NullableTypeAnnotation':
+        return compareObjectAnnotation(a, b.typeAnnotation);
+      case 'UnionTypeAnnotation':
+        return b.types.some(type => compareObjectAnnotation(a, type) !== false);
+      case 'VoidTypeAnnotation':
+      case 'BooleanTypeAnnotation':
+      case 'BooleanLiteralTypeAnnotation':
+      case 'StringTypeAnnotation':
+      case 'StringLiteralTypeAnnotation':
+      case 'NumberTypeAnnotation':
+      case 'NumericLiteralTypeAnnotation':
+      case 'FunctionTypeAnnotation':
+        return false;
+      default:
+        return null;
+    }
+  }
+
+  function compareGenericAnnotation (a: Object, b: Object): ?boolean {
+    switch (b.type) {
+      case 'TypeAnnotation':
+      case 'NullableTypeAnnotation':
+        return compareGenericAnnotation(a, b.typeAnnotation);
+      case 'GenericTypeAnnotation':
+        if (b.id.name === a.id.name) {
+          return true;
+        }
+        else {
+          return null;
+        }
+      case 'UnionTypeAnnotation':
+        return b.types.some(type => compareGenericAnnotation(a, type) !== false);
+      default:
+        return null;
+    }
+  }
+
+  function compareTupleAnnotation (a: Object, b: Object): ?boolean {
+    if (b.type === 'TupleTypeAnnotation') {
+      if (b.types.length === 0) {
+        return null;
+      }
+      else if (b.types.length < a.types.length) {
+        return false;
+      }
+      return a.types.every((type, index) => compareAnnotations(type, b.types[index]));
+    }
+    switch (b.type) {
+      case 'TypeAnnotation':
+      case 'NullableTypeAnnotation':
+        return compareTupleAnnotation(a, b.typeAnnotation);
+      case 'UnionTypeAnnotation':
+        return b.types.some(type => compareTupleAnnotation(a, type) !== false);
+      case 'VoidTypeAnnotation':
+      case 'BooleanTypeAnnotation':
+      case 'BooleanLiteralTypeAnnotation':
+      case 'StringTypeAnnotation':
+      case 'StringLiteralTypeAnnotation':
+      case 'NumberTypeAnnotation':
+      case 'NumericLiteralTypeAnnotation':
+      case 'FunctionTypeAnnotation':
+        return false;
+      default:
+        return null;
+    }
+  }
+
+  function compareUnionAnnotation (a: Object, b: Object): ?boolean {
+    switch (b.type) {
+      case 'NullableTypeAnnotation':
+        return compareUnionAnnotation(a, b.typeAnnotation);
+      case 'AnyTypeAnnotation':
+      case 'MixedTypeAnnotation':
+        return null;
+      default:
+        return a.types.some(type => compareAnnotations(type, b));
+    }
+  }
+
+  function compareNullableAnnotation (a: Object, b: Object): ?boolean {
+    switch (b.type) {
+      case 'TypeAnnotation':
+        return compareNullableAnnotation(a, b.typeAnnotation);
+      case 'NullableTypeAnnotation':
+      case 'VoidTypeAnnotation':
+        return null;
+    }
+    if (compareAnnotations(a.typeAnnotation, b) === true) {
+      return true;
+    }
+    else {
+      return null;
+    }
+  }
+
+  function arrayExpressionToTupleAnnotation (path): Object {
+    const elements = path.get('elements');
+    return t.tupleTypeAnnotation(elements.map(element => getAnnotation(element)));
   }
 
   function checkStaticUnion ({path, types}) {
@@ -456,7 +612,7 @@ export default function ({types: t, template}): Object {
         (type, index) => checkAnnotation(
           t.memberExpression(
             input,
-            t.numberLiteral(index),
+            t.numericLiteral(index),
             true
           ),
           type,
@@ -470,7 +626,7 @@ export default function ({types: t, template}): Object {
           input,
           t.identifier('length')
         ),
-        t.numberLiteral(types.length)
+        t.numericLiteral(types.length)
       );
 
       return checks.reduce((last, check, index) => {
@@ -485,6 +641,46 @@ export default function ({types: t, template}): Object {
         checkLength
       ));
     }
+  }
+
+  function checkTuple ({input, types, scope}): Object {
+    if (types.length === 0) {
+      return checkIsArray({input}).expression;
+    }
+
+    // This is a tuple
+    const checks = types.map(
+      (type, index) => checkAnnotation(
+        t.memberExpression(
+          input,
+          t.numericLiteral(index),
+          true
+        ),
+        type,
+        scope
+      )
+    ).filter(identity);
+
+    const checkLength = t.binaryExpression(
+      '>=',
+      t.memberExpression(
+        input,
+        t.identifier('length')
+      ),
+      t.numericLiteral(types.length)
+    );
+
+    return checks.reduce((last, check, index) => {
+      return t.logicalExpression(
+        "&&",
+        last,
+        check
+      );
+    }, t.logicalExpression(
+      '&&',
+      checkIsArray({input}).expression,
+      checkLength
+    ));
   }
 
   function checkObject ({input, properties, scope}): Object {
@@ -535,14 +731,16 @@ export default function ({types: t, template}): Object {
         else if (isTypeChecker(annotation.id, scope)) {
           return checks.type({input, type: annotation.id}).expression;
         }
-        else if (isGenericType(annotation.id, scope)) {
+        else if (isPolymorphicType(annotation.id, scope)) {
           return;
         }
         else {
           return checks.instanceof({input, type: createTypeExpression(annotation.id)}).expression;
         }
+      case 'TupleTypeAnnotation':
+        return checks.tuple({input, types: annotation.types, scope});
       case 'NumberTypeAnnotation':
-      case 'NumberLiteralTypeAnnotation':
+      case 'NumericLiteralTypeAnnotation':
         return checks.number({input}).expression;
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
@@ -571,77 +769,171 @@ export default function ({types: t, template}): Object {
   }
 
   function staticCheckAnnotation (path: Object, annotation: Object) {
+    const other = getAnnotation(path);
+
     switch (annotation.type) {
       case 'TypeAnnotation':
         return staticCheckAnnotation(path, annotation.typeAnnotation);
       case 'GenericTypeAnnotation':
-        if (annotation.id.name === 'Array') {
-          return staticChecks.array({path, types: annotation.typeParameters ? annotation.typeParameters.params : []});
-        }
-        else if (annotation.id.name === 'Function') {
-          return staticChecks.function(path);
-        }
-        else if (isTypeChecker(annotation.id, path.scope)) {
+        if (isTypeChecker(annotation.id, path.scope)) {
           return staticChecks.type({path, type: annotation.id});
         }
-        else if (isGenericType(annotation.id, path.scope)) {
+        else if (isPolymorphicType(annotation.id, path.scope)) {
           return;
         }
         else {
           return staticChecks.instanceof({path, type: createTypeExpression(annotation.id)});
         }
-      case 'NumberTypeAnnotation':
-      case 'NumberLiteralTypeAnnotation':
-        return staticChecks.number(path);
-      case 'BooleanTypeAnnotation':
-      case 'BooleanLiteralTypeAnnotation':
-        return staticChecks.boolean(path);
-      case 'StringTypeAnnotation':
-      case 'StringLiteralTypeAnnotation':
-        return staticChecks.string(path);
-      case 'UnionTypeAnnotation':
-        return staticChecks.union({path, types: annotation.types});
-      case 'ObjectTypeAnnotation':
-        return staticChecks.object({path, properties: annotation.properties});
-      case 'FunctionTypeAnnotation':
-        return staticChecks.function({path, params: annotation.params, returnType: annotation.returnType});
-      case 'MixedTypeAnnotation':
-        return true;
-      case 'AnyTypeAnnotation':
-        return staticChecks.any(path);
-      case 'NullableTypeAnnotation':
-        return staticChecks.nullable({path, type: annotation.typeAnnotation});
-      case 'VoidTypeAnnotation':
-        return staticChecks.undefined(path);
-      default:
-        console.log(annotation);
-        throw new Error('Unknown type: ' + annotation.type);
     }
+
+    return compareAnnotations(annotation, other);
   }
 
   /**
    * Get the type annotation for a given node.
    */
   function getAnnotation (path: Object) {
-    let id;
-    if (path.type === 'Identifier') {
-      id = path.scope.getBindingIdentifier(path.node.name);
+    let annotation = getAnnotationShallow(path);
+    while (annotation && annotation.type === 'TypeAnnotation') {
+      annotation = annotation.typeAnnotation;
     }
-    else if (path.type === 'CallExpression') {
-      const callee = path.get('callee');
-      if (callee.type === 'Identifier') {
-        const fn = getFunctionForIdentifier(callee);
-        if (fn) {
-          id = fn.node;
-        }
+    return annotation || t.anyTypeAnnotation();
+  }
+
+  function getAnnotationShallow (path: Object): ?Object {
+    const {node, scope} = path;
+    if (node.type === 'TypeAlias') {
+      return node.right;
+    }
+    else if (!node.typeAnnotation && !node.savedTypeAnnotation && !node.returnType) {
+      switch (path.type) {
+        case 'Identifier':
+          const id = scope.getBindingIdentifier(node.name);
+          if (!id) {
+            break;
+          }
+          if (id.savedTypeAnnotation) {
+            return id.savedTypeAnnotation;
+          }
+          else if (id.returnType) {
+            return id.returnType;
+          }
+          else if (id.typeAnnotation) {
+            return id.typeAnnotation;
+          }
+          else if (isPolymorphicType(id, scope)) {
+            return t.anyTypeAnnotation();
+          }
+          return path.getTypeAnnotation();
+        case 'NumericLiteral':
+        case 'StringLiteral':
+        case 'BooleanLiteral':
+          return path.getTypeAnnotation();
+        case 'CallExpression':
+          const callee = path.get('callee');
+          if (callee.type === 'Identifier') {
+            const fn = getFunctionForIdentifier(callee);
+            if (fn) {
+              return getAnnotation(fn);
+            }
+          }
+          break;
+        case 'MemberExpression':
+          return getMemberExpressionAnnotation(path);
+        case 'ArrayExpression':
+          return getArrayExpressionAnnotation(path);
+        case 'BinaryExpression':
+          return getBinaryExpressionAnnotation(path);
+        case 'BinaryExpression':
+          return getBinaryExpressionAnnotation(path);
+        case 'XX LogicalExpression':
+          return getLogicalExpressionAnnotation(path);
+        default:
+          return t.anyTypeAnnotation();
+
       }
     }
-    if (id) {
-      return id.savedTypeAnnotation || id.returnType || id.typeAnnotation || path.getTypeAnnotation();
+    return node.savedTypeAnnotation || node.returnType || node.typeAnnotation || path.getTypeAnnotation();
+  }
+
+  function getBinaryExpressionAnnotation (path: Object): Object {
+    const {node} = path;
+    if (isBooleanExpression(node)) {
+      return t.booleanTypeAnnotation();
     }
     else {
+      return t.anyTypeAnnotation();
+    }
+  }
+
+  function getArrayExpressionAnnotation (path: Object): Object {
+    return t.genericTypeAnnotation(
+      t.identifier('Array'),
+      path.get('elements').map(getAnnotation)
+    );
+  }
+
+  function getMemberExpressionAnnotation (path: Object): Object {
+    if (path.node.computed) {
+      return getComputedMemberExpressionAnnotation(path);
+    }
+    const object = path.get('object');
+    const {node: id} = path.get('property');
+    const {name} = id;
+    let annotation = getAnnotation(object);
+    if (annotation.type === 'NullableTypeAnnotation') {
+      annotation = annotation.typeAnnotation;
+    }
+    if (annotation.type === 'GenericTypeAnnotation') {
+      const target = path.scope.getBinding(annotation.id.name);
+      if (target) {
+        annotation = getAnnotation(target.path);
+      }
+    }
+    switch (annotation.type) {
+      case 'ObjectTypeAnnotation':
+        for (let {key, value} of annotation.properties) {
+          if (key.name === id.name) {
+            return value;
+          }
+        }
+        break;
+    }
+    return path.getTypeAnnotation();
+  }
+
+  function getComputedMemberExpressionAnnotation (path: Object): Object {
+    const object = path.get('object');
+    const property = path.get('property');
+    let objectAnnotation = getAnnotation(object);
+    if (objectAnnotation.type === 'TypeAnnotation' || objectAnnotation.type === 'NullableTypeAnnotation') {
+      objectAnnotation = objectAnnotation.typeAnnotation;
+    }
+    let propertyAnnotation = getAnnotation(property);
+    if (propertyAnnotation.type === 'TypeAnnotation' || propertyAnnotation.type === 'NullableTypeAnnotation') {
+      propertyAnnotation = propertyAnnotation.typeAnnotation;
+    }
+    const {confident, value} = property.evaluate();
+    if (!confident) {
       return path.getTypeAnnotation();
     }
+    switch (objectAnnotation.type) {
+      case 'TupleTypeAnnotation':
+        if (objectAnnotation.types.length === 0) {
+          break;
+        }
+        else if (typeof value === 'number') {
+          if (!objectAnnotation.types[value]) {
+            throw new SyntaxError(`Invalid computed member expression for tuple: ` + humanReadableType(objectAnnotation, path.scope))
+          }
+          return objectAnnotation.types[value];
+        }
+        else {
+          throw new SyntaxError(`Invalid computed member expression for tuple: ` + humanReadableType(objectAnnotation, path.scope));
+        }
+        break;
+    }
+    return path.getTypeAnnotation();
   }
 
   function getFunctionForIdentifier (path: Object): boolean|Object {
@@ -682,7 +974,7 @@ export default function ({types: t, template}): Object {
       case 'NullableTypeAnnotation':
         return maybeNumberAnnotation(annotation.typeAnnotation);
       case 'NumberTypeAnnotation':
-      case 'NumberLiteralTypeAnnotation':
+      case 'NumericLiteralTypeAnnotation':
         return true;
       case 'GenericTypeAnnotation':
         switch (annotation.id.name) {
@@ -869,7 +1161,7 @@ export default function ({types: t, template}): Object {
       case 'StringTypeAnnotation':
       case 'StringLiteralTypeAnnotation':
       case 'NumberTypeAnnotation':
-      case 'NumberLiteralTypeAnnotation':
+      case 'NumericLiteralTypeAnnotation':
       case 'FunctionTypeAnnotation':
         return false;
       default:
@@ -886,10 +1178,34 @@ export default function ({types: t, template}): Object {
       case 'TypeAnnotation':
       case 'NullableTypeAnnotation':
         return maybeArrayAnnotation(annotation.typeAnnotation);
+      case 'TupleTypeAnnotation':
+        return true;
       case 'GenericTypeAnnotation':
-        return annotation.id.name === 'Array';
+        return annotation.id.name === 'Array' ? true : null;
       case 'UnionTypeAnnotation':
         return annotation.types.some(maybeArrayAnnotation);
+      case 'AnyTypeAnnotation':
+      case 'MixedTypeAnnotation':
+        return null;
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Returns `true` if the annotation is compatible with a tuple,
+   * `false` if it definitely isn't, or `null` if we're not sure.
+   */
+  function maybeTupleAnnotation (annotation: Object): ?boolean {
+    switch (annotation.type) {
+      case 'TypeAnnotation':
+      case 'NullableTypeAnnotation':
+        return maybeTupleAnnotation(annotation.typeAnnotation);
+      case 'TupleTypeAnnotation':
+        return true;
+      case 'UnionTypeAnnotation':
+        return annotation.types.some(maybeTupleAnnotation);
+      case 'GenericTypeAnnotation':
       case 'AnyTypeAnnotation':
       case 'MixedTypeAnnotation':
         return null;
@@ -915,8 +1231,10 @@ export default function ({types: t, template}): Object {
         else {
           return `an instance of ${getTypeName(annotation.id)}`;
         }
+      case 'TupleTypeAnnotation':
+        return humanReadableTuple(annotation, scope);
       case 'NumberTypeAnnotation':
-      case 'NumberLiteralTypeAnnotation':
+      case 'NumericLiteralTypeAnnotation':
         return "a number";
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
@@ -955,6 +1273,10 @@ export default function ({types: t, template}): Object {
     return generate(annotation).code;
   }
 
+  function humanReadableTuple (annotation: Object, scope: Object): string {
+    return generate(annotation).code;
+  }
+
   function isTypeChecker (id: Object, scope: Object): Boolean {
     const binding = scope.getBinding(id.name);
     if (binding === undefined) {
@@ -964,7 +1286,7 @@ export default function ({types: t, template}): Object {
     return path != null && (path.type === 'TypeAlias' || (path.type === 'VariableDeclaration' && path.node.isTypeChecker));
   }
 
-  function isGenericType (id: Object, scope: Object): Boolean {
+  function isPolymorphicType (id: Object, scope: Object): Boolean {
     const binding = scope.getBinding(id.name);
     if (binding !== undefined) {
       return false;
@@ -974,6 +1296,7 @@ export default function ({types: t, template}): Object {
       const {node} = path;
       if (t.isFunction(node) && node.typeParameters) {
         for (let param of node.typeParameters.params) {
+          param.isPolymorphicType = true;
           if (param.name === id.name) {
             return true;
           }
@@ -982,6 +1305,27 @@ export default function ({types: t, template}): Object {
       path = path.parent;
     }
     return false;
+  }
+
+  function getPolymorphicType (id: Object, scope: Object): ?Object {
+    const binding = scope.getBinding(id.name);
+    if (binding !== undefined) {
+      return false;
+    }
+    let {path} = scope;
+    while (path && path.type !== 'Program') {
+      const {node} = path;
+      if (t.isFunction(node) && node.typeParameters) {
+        for (let param of node.typeParameters.params) {
+          param.isPolymorphicType = true;
+          if (param.name === id.name) {
+            return param;
+          }
+        }
+      }
+      path = path.parent;
+    }
+    return null;
   }
 
   function collectParamChecks (path: Object): Array {

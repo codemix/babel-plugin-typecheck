@@ -9,10 +9,22 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('infer-member-expression', {name: "bob"});
+  ok('infer-member-expression-from-typealias', {name: "bob"});
+  ok('infer-nested-member-expression-from-typealias', {name: "bob", location: {address: "123 Fake Street"}});
+  failStatic("bad-infer-nested-member-expression-from-typealias", {name: "bob", location: {address: "123 Fake Street"}});
 
+  //return;
+  failStatic("bad-binary-return-value");
+  ok("var-declarations", ["abc", "123"])
+
+
+  ok("tuples", [123, "foobar"]);
+  failStatic("bad-tuples", [123, "foobar"]);
   ok("return-regexp");
 
   ok("conditional-return-value");
+
   failStatic("bad-conditional-return-value");
 
   failWith("Function \"demo\" return value violates contract, expected a number or a string got Object", "conditional-return-value", {a: 123});
@@ -20,6 +32,7 @@ describe('Typecheck', function () {
 
   ok("assignment-expression", [1, 2, 3]);
   failStatic("bad-array-return-value");
+
   failStatic("bad-function-return-value");
 
   ok("type-aliases", "foo", "bar", {foo: "foo", bar: 123});
@@ -41,7 +54,6 @@ describe('Typecheck', function () {
   ok("any-return-value");
   ok("callexpr-return-value");
   ok("binary-return-value");
-  failStatic("bad-binary-return-value");
   ok("mixed-return-value");
   ok("string-arguments", "hello world");
   ok("multiple-arguments", "hello world", 123);
