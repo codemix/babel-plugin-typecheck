@@ -398,12 +398,9 @@ export default function ({types: t, template}): Object {
       case 'FunctionTypeAnnotation':
         return maybeFunctionAnnotation(b);
       case 'AnyTypeAnnotation':
-        if (b.type === 'AnyTypeAnnotation') {
-          return null;
-        }
-        return !maybeNullableAnnotation(b);
+        return null;
       case 'MixedTypeAnnotation':
-        return true;
+        return null;
       case 'ObjectTypeAnnotation':
         return compareObjectAnnotation(a, b);
       case 'GenericTypeAnnotation':
@@ -497,8 +494,27 @@ export default function ({types: t, template}): Object {
       case 'MixedTypeAnnotation':
         return null;
       default:
+
         return a.types.some(type => compareAnnotations(type, b));
     }
+
+    let falseCount = 0;
+    for (let type of a.types) {
+      const result = compareAnnotations(type, b);
+      if (result === true) {
+        return true;
+      }
+      else if (result === false) {
+        falseCount++;
+      }
+    }
+    if (falseCount === types.length) {
+      return false;
+    }
+    else {
+      return null;
+    }
+
   }
 
   function compareNullableAnnotation (a: Object, b: Object): ?boolean {
@@ -846,10 +862,11 @@ export default function ({types: t, template}): Object {
           return getBinaryExpressionAnnotation(path);
         case 'BinaryExpression':
           return getBinaryExpressionAnnotation(path);
-        case 'XX LogicalExpression':
+        case 'LogicalExpression':
           return getLogicalExpressionAnnotation(path);
+        case 'ConditionalExpression':
         default:
-          return t.anyTypeAnnotation();
+          return path.getTypeAnnotation();
 
       }
     }
@@ -862,6 +879,30 @@ export default function ({types: t, template}): Object {
       return t.booleanTypeAnnotation();
     }
     else {
+      return t.anyTypeAnnotation();
+    }
+  }
+
+  function getLogicalExpressionAnnotation (path: Object): Object {
+    const {node} = path;
+    if (isBooleanExpression(node)) {
+      return t.booleanTypeAnnotation();
+    }
+    else {
+      let left = path.get('left');
+      let right = path.get('right');
+      switch (node.operator) {
+        case '&&':
+        case '||':
+          ([left, right] = [getAnnotation(left), getAnnotation(right)]);
+          if (t.isUnionTypeAnnotation(left)) {
+            left.types.push(right);
+            return left;
+          }
+          else {
+            return t.unionTypeAnnotation([left, right]);
+          }
+      }
       return t.anyTypeAnnotation();
     }
   }
@@ -990,7 +1031,22 @@ export default function ({types: t, template}): Object {
             return null;
         }
       case 'UnionTypeAnnotation':
-        return annotation.types.some(type => maybeNumberAnnotation(type) !== false);
+        let falseCount = 0;
+        for (let type of annotation.types) {
+          const result = maybeNumberAnnotation(type);
+          if (result === true) {
+            return true;
+          }
+          else if (result === false) {
+            falseCount++;
+          }
+        }
+        if (falseCount === annotation.types.length) {
+          return false;
+        }
+        else {
+          return null;
+        }
       case 'AnyTypeAnnotation':
       case 'MixedTypeAnnotation':
         return null;
@@ -1025,7 +1081,22 @@ export default function ({types: t, template}): Object {
             return null;
         }
       case 'UnionTypeAnnotation':
-        return annotation.types.some(type => maybeStringAnnotation(type) !== false);
+        let falseCount = 0;
+        for (let type of annotation.types) {
+          const result = maybeStringAnnotation(type);
+          if (result === true) {
+            return true;
+          }
+          else if (result === false) {
+            falseCount++;
+          }
+        }
+        if (falseCount === annotation.types.length) {
+          return false;
+        }
+        else {
+          return null;
+        }
       case 'AnyTypeAnnotation':
       case 'MixedTypeAnnotation':
         return null;
@@ -1061,7 +1132,22 @@ export default function ({types: t, template}): Object {
             return null;
         }
       case 'UnionTypeAnnotation':
-        return annotation.types.some(type => maybeBooleanAnnotation(type) !== false);
+        let falseCount = 0;
+        for (let type of annotation.types) {
+          const result = maybeBooleanAnnotation(type);
+          if (result === true) {
+            return true;
+          }
+          else if (result === false) {
+            falseCount++;
+          }
+        }
+        if (falseCount === annotation.types.length) {
+          return false;
+        }
+        else {
+          return null;
+        }
       case 'AnyTypeAnnotation':
       case 'MixedTypeAnnotation':
         return null;
@@ -1096,7 +1182,22 @@ export default function ({types: t, template}): Object {
             return null;
         }
       case 'UnionTypeAnnotation':
-        return annotation.types.some(type => maybeFunctionAnnotation(type) !== false);
+        let falseCount = 0;
+        for (let type of annotation.types) {
+          const result = maybeFunctionAnnotation(type);
+          if (result === true) {
+            return true;
+          }
+          else if (result === false) {
+            falseCount++;
+          }
+        }
+        if (falseCount === annotation.types.length) {
+          return false;
+        }
+        else {
+          return null;
+        }
       case 'AnyTypeAnnotation':
       case 'MixedTypeAnnotation':
         return null;
@@ -1131,7 +1232,22 @@ export default function ({types: t, template}): Object {
             return null;
         }
       case 'UnionTypeAnnotation':
-        return annotation.types.some(type => maybeNullableAnnotation(type) !== false);
+        let falseCount = 0;
+        for (let type of annotation.types) {
+          const result = maybeNullableAnnotation(type);
+          if (result === true) {
+            return true;
+          }
+          else if (result === false) {
+            falseCount++;
+          }
+        }
+        if (falseCount === annotation.types.length) {
+          return false;
+        }
+        else {
+          return null;
+        }
       default:
         return false;
     }
@@ -1154,7 +1270,22 @@ export default function ({types: t, template}): Object {
           return null;
         }
       case 'UnionTypeAnnotation':
-        return annotation.types.some(type => maybeInstanceOfAnnotation(type, expected) !== false);
+        let falseCount = 0;
+        for (let type of annotation.types) {
+          const result = maybeInstanceOfAnnotation(type, expected);
+          if (result === true) {
+            return true;
+          }
+          else if (result === false) {
+            falseCount++;
+          }
+        }
+        if (falseCount === annotation.types.length) {
+          return false;
+        }
+        else {
+          return null;
+        }
       case 'VoidTypeAnnotation':
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
@@ -1183,7 +1314,22 @@ export default function ({types: t, template}): Object {
       case 'GenericTypeAnnotation':
         return annotation.id.name === 'Array' ? true : null;
       case 'UnionTypeAnnotation':
-        return annotation.types.some(maybeArrayAnnotation);
+        let falseCount = 0;
+        for (let type of annotation.types) {
+          const result = maybeArrayAnnotation(type);
+          if (result === true) {
+            return true;
+          }
+          else if (result === false) {
+            falseCount++;
+          }
+        }
+        if (falseCount === annotation.types.length) {
+          return false;
+        }
+        else {
+          return null;
+        }
       case 'AnyTypeAnnotation':
       case 'MixedTypeAnnotation':
         return null;
@@ -1204,7 +1350,22 @@ export default function ({types: t, template}): Object {
       case 'TupleTypeAnnotation':
         return true;
       case 'UnionTypeAnnotation':
-        return annotation.types.some(maybeTupleAnnotation);
+        let falseCount = 0;
+        for (let type of annotation.types) {
+          const result = maybeTupleAnnotation(type);
+          if (result === true) {
+            return true;
+          }
+          else if (result === false) {
+            falseCount++;
+          }
+        }
+        if (falseCount === annotation.types.length) {
+          return false;
+        }
+        else {
+          return null;
+        }
       case 'GenericTypeAnnotation':
       case 'AnyTypeAnnotation':
       case 'MixedTypeAnnotation':

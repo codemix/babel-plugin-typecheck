@@ -9,6 +9,8 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('logical-expression', 'foo');
+  ok('logical-or-expression', 'foo');
   ok('infer-member-expression', {name: "bob"});
   ok('infer-member-expression-from-typealias', {name: "bob"});
   ok('infer-nested-member-expression-from-typealias', {name: "bob", location: {address: "123 Fake Street"}});
