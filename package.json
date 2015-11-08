@@ -41,7 +41,7 @@
     "should": "^6.0.1"
   },
   "dependencies": {
-    "babel-generator": "^6.0.19",
-    "babel-plugin-transform-es2015-modules-commonjs": "^6.0.2"
+    "babel-generator": "^6.1.2",
+    "babel-plugin-transform-es2015-modules-commonjs": "^6.1.3"
   }
 }

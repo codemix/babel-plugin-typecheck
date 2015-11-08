@@ -63,7 +63,7 @@ export default function ({types: t, template}): Object {
 
   return {
     visitor: {
-      TypeAlias (path: Object) {
+      TypeAlias (path: Object): void {
         path.replaceWith(createTypeAliasChecks(path));
       },
 
@@ -331,19 +331,19 @@ export default function ({types: t, template}): Object {
 
   function createStaticChecks (): Object {
     return {
-      string (path) {
+      string (path: Object): ?boolean {
         return maybeStringAnnotation(getAnnotation(path));
       },
-      number (path) {
+      number (path: Object) {
         return maybeNumberAnnotation(getAnnotation(path));
       },
-      boolean (path) {
+      boolean (path: Object) {
         return maybeBooleanAnnotation(getAnnotation(path));
       },
-      function (path) {
+      function (path: Object) {
         return maybeFunctionAnnotation(getAnnotation(path));
       },
-      any (path) {
+      any (path: Object) {
         return null;
       },
       instanceof ({path, type}) {
@@ -382,7 +382,7 @@ export default function ({types: t, template}): Object {
         if (annotation.type === 'TypeAnnotation' || annotation.type === 'NullableTypeAnnotation') {
           annotation = annotation.typeAnnotation;
         }
-        console.log('TUPLE!');
+        //console.log('TUPLE!');
         return maybeTupleAnnotation(annotation);
       },
       union: checkStaticUnion,
@@ -434,7 +434,7 @@ export default function ({types: t, template}): Object {
     let falseCount = 0;
     let trueCount = 0;
     if (!a.types) {
-      console.log(a);
+      //console.trace(a.type);
       return null;
     }
     for (let type of a.types) {
@@ -807,7 +807,7 @@ export default function ({types: t, template}): Object {
       case 'VoidTypeAnnotation':
         return checks.undefined({input}).expression;
       default:
-        console.log(annotation);
+        //console.log(annotation);
         throw new Error('Unknown type: ' + annotation.type);
     }
   }
@@ -913,6 +913,16 @@ export default function ({types: t, template}): Object {
     return node.savedTypeAnnotation || node.returnType || node.typeAnnotation || path.getTypeAnnotation();
   }
 
+  function getObjectMethodAnnotation (path: Object): ?Object {
+    const {node} = path;
+    return t.functionTypeAnnotation(
+      null,
+      node.params.map(param => param.savedTypeAnnotation || param.typeAnnotation),
+      null,
+      node.savedTypeAnnotation || node.returnType || node.typeAnnotation || t.anyTypeAnnotation()
+    );
+  }
+
   function getAssignmentExpressionAnnotation (path: Object): ?Object {
     if (path.node.operator === '=') {
       return getAnnotation(path.get('right'));
@@ -983,11 +993,27 @@ export default function ({types: t, template}): Object {
   }
 
   function getObjectExpressionAnnotation (path: Object): Object {
-    return t.objectTypeAnnotation(
+    const annotation = t.objectTypeAnnotation(
       path.get('properties').map(property => {
-        console.log(property.node);
+        if (property.computed) {
+          return;
+        }
+        switch (property.type) {
+          case 'ObjectMethod':
+            return t.objectTypeProperty(
+              t.identifier(property.node.key.name),
+              getObjectMethodAnnotation(property)
+            );
+          case 'ObjectProperty':
+            return t.objectTypeProperty(
+              t.identifier(property.node.key.name),
+              property.node.value.savedTypeAnnotation || property.node.value.typeAnnotation || t.anyTypeAnnotation()
+            );
+        }
       }).filter(identity)
     );
+    //console.log(generate(annotation).code);
+    return annotation;
   }
 
   function getMemberExpressionAnnotation (path: Object): Object {
