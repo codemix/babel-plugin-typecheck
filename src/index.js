@@ -166,7 +166,7 @@ export default function ({types: t, template}): Object {
             block.push(thrower({
               check,
               ret,
-              message: returnTypeErrorMessage(path, fn)
+              message: returnTypeErrorMessage(path, fn, id)
             }));
             path.replaceWith(t.blockStatement(block));
           }
@@ -186,7 +186,7 @@ export default function ({types: t, template}): Object {
             path.replaceWith(thrower({
               check,
               ret,
-              message: returnTypeErrorMessage(path, fn)
+              message: returnTypeErrorMessage(path, fn, id)
             }));
           }
         }
@@ -238,6 +238,9 @@ export default function ({types: t, template}): Object {
       AssignmentExpression: {
         enter (path: Object) {
           const {node, scope} = path;
+          if (node.hasBeenTypeChecked || node.left.hasBeenTypeChecked) {
+            return;
+          }
           const binding = scope.getBinding(node.left.name);
           if (!binding || binding.path.type !== 'VariableDeclarator') {
             return;
@@ -252,7 +255,7 @@ export default function ({types: t, template}): Object {
           node.left.hasBeenTypeChecked = true;
           if (annotation.type === 'AnyTypeAnnotation') {
             annotation = getAnnotation(path.get('right'));
-            if (annotation.type === 'AnyTypeAnnotation') {
+            if (allowsAny(annotation)) {
               return;
             }
           }
@@ -317,7 +320,7 @@ export default function ({types: t, template}): Object {
       instanceof: template(`input instanceof type`),
       type: template(`type(input)`),
       mixed: () => null,
-      any: template(`input != null`),
+      any: () => template(`input != null`).expression,
       union: checkUnion,
       array: checkArray,
       tuple: checkTuple,
@@ -379,8 +382,8 @@ export default function ({types: t, template}): Object {
         if (annotation.type === 'TypeAnnotation' || annotation.type === 'NullableTypeAnnotation') {
           annotation = annotation.typeAnnotation;
         }
-        console.log(annotation);
-        return maybeTupleAnnotation(getAnnotation(path));
+        console.log('TUPLE!');
+        return maybeTupleAnnotation(annotation);
       },
       union: checkStaticUnion,
       object: checkStaticObject,
@@ -430,6 +433,10 @@ export default function ({types: t, template}): Object {
   function unionComparer (a: Object, b: Object, comparator: Function): ?boolean {
     let falseCount = 0;
     let trueCount = 0;
+    if (!a.types) {
+      console.log(a);
+      return null;
+    }
     for (let type of a.types) {
       const result = comparator(type, b);
       if (result === true) {
@@ -754,7 +761,7 @@ export default function ({types: t, template}): Object {
     return declaration;
   }
 
-  function checkAnnotation (input: Object, annotation: Object, scope: Object): Object {
+  function checkAnnotation (input: Object, annotation: Object, scope: Object): ?Object {
     switch (annotation.type) {
       case 'TypeAnnotation':
         return checkAnnotation(input, annotation.typeAnnotation, scope);
@@ -794,7 +801,7 @@ export default function ({types: t, template}): Object {
       case 'MixedTypeAnnotation':
         return checks.mixed({input});
       case 'AnyTypeAnnotation':
-        return checks.any({input}).expression;
+        return checks.any({input});
       case 'NullableTypeAnnotation':
         return checks.nullable({input, type: annotation.typeAnnotation, scope}).expression;
       case 'VoidTypeAnnotation':
@@ -978,7 +985,7 @@ export default function ({types: t, template}): Object {
   function getObjectExpressionAnnotation (path: Object): Object {
     return t.objectTypeAnnotation(
       path.get('properties').map(property => {
-        console.log(property.key, property.value);
+        console.log(property.node);
       }).filter(identity)
     );
   }
@@ -1509,7 +1516,7 @@ export default function ({types: t, template}): Object {
     return generate(annotation).code;
   }
 
-  function isTypeChecker (id: Object, scope: Object): Boolean {
+  function isTypeChecker (id: Object, scope: Object): boolean {
     const binding = scope.getBinding(id.name);
     if (binding === undefined) {
       return false;
@@ -1518,7 +1525,7 @@ export default function ({types: t, template}): Object {
     return path != null && (path.type === 'TypeAlias' || (path.type === 'VariableDeclaration' && path.node.isTypeChecker));
   }
 
-  function isPolymorphicType (id: Object, scope: Object): Boolean {
+  function isPolymorphicType (id: Object, scope: Object): boolean {
     const binding = scope.getBinding(id.name);
     if (binding !== undefined) {
       return false;
@@ -1655,7 +1662,7 @@ export default function ({types: t, template}): Object {
     });
   }
 
-  function returnTypeErrorMessage (path: Object, fn: Object): Object {
+  function returnTypeErrorMessage (path: Object, fn: Object, id: ?Object): Object {
     const {node, scope} = path;
     const name = fn.id ? fn.id.name : '';
     const message = `Function ${name ? `"${name}" ` : ''}return value violates contract, expected ${humanReadableType(fn.returnType, scope)} got `;
@@ -1663,7 +1670,7 @@ export default function ({types: t, template}): Object {
     return t.binaryExpression(
       '+',
       t.stringLiteral(message),
-      node.argument ? readableName({input: node.argument}).expression : t.stringLiteral('undefined')
+      node.argument ? readableName({input: id || node.argument}).expression : t.stringLiteral('undefined')
     );
   }
 
@@ -1767,6 +1774,23 @@ export default function ({types: t, template}): Object {
     return arr1;
   }
 
+  /**
+   * Determine whether the given annotation allows any value.
+   */
+  function allowsAny (annotation: Object): boolean {
+    if (annotation.type === 'TypeAnnotation' || annotation.type === 'NullableTypeAnnotation') {
+      return allowsAny(annotation.typeAnnotation);
+    }
+    else if (annotation.type === 'AnyTypeAnnotation' || annotation.type === 'MixedTypeAnnotation') {
+      return true;
+    }
+    else if (annotation.type === 'UnionTypeAnnotation') {
+      return annotation.types.some(allowsAny);
+    }
+    else {
+      return false;
+    }
+  }
 
   /**
    * Determine whether a given node is nully (null or undefined).
@@ -1793,7 +1817,7 @@ export default function ({types: t, template}): Object {
   /**
    * A function that returns its first argument, useful when filtering.
    */
-  function identity (input: any): any {
+  function identity <T> (input: T): T {
     return input;
   }
 }

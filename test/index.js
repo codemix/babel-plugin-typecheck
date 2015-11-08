@@ -4,6 +4,9 @@ import {parse, transform, traverse} from 'babel-core';
 if (process.env.NODE_WATCH) {
   var typecheck = require('../src').default;
 }
+else if (process.env.TYPECHECK_USE_LIBCHECKED) {
+  var typecheck = require('../lib-checked').default;
+}
 else {
   var typecheck = require('../lib').default;
 }

@@ -5,9 +5,11 @@
   "main": "lib/index.js",
   "scripts": {
     "build": "babel -d ./lib ./src",
+    "build-typed": "npm run build && babel --plugins ./lib -d ./lib-checked ./src",
     "prepublish": "npm run build",
     "pretest": "npm run build",
     "test": "mocha ./test/index.js",
+    "test-checked": "npm run build-typed && TYPECHECK_USE_LIBCHECKED=1 mocha ./test/index.js",
     "watch": "NODE_WATCH=1 mocha --watch"
   },
   "repository": {

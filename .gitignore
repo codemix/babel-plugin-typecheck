@@ -1,5 +1,6 @@
 .settings
 node_modules
 lib
+lib-checked
 *.transformed
 npm-debug.log
