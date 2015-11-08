@@ -9,19 +9,23 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('infer-member-expression-from-object', {name: "bob"});
   ok('logical-expression', 'foo');
   ok('logical-or-expression', 'foo');
   ok('infer-member-expression', {name: "bob"});
+
   ok('infer-member-expression-from-typealias', {name: "bob"});
+
   ok('infer-nested-member-expression-from-typealias', {name: "bob", location: {address: "123 Fake Street"}});
   failStatic("bad-infer-nested-member-expression-from-typealias", {name: "bob", location: {address: "123 Fake Street"}});
 
-  //return;
   failStatic("bad-binary-return-value");
   ok("var-declarations", ["abc", "123"])
 
 
   ok("tuples", [123, "foobar"]);
+  ok("tuples-assignment-expression", [123, "foobar"]);
+
   failStatic("bad-tuples", [123, "foobar"]);
   ok("return-regexp");
 
@@ -132,7 +136,7 @@ describe('Typecheck', function () {
 
   ok("export-type", {name: "Bob", age: 45});
   ok("import-type", {name: "Bob", age: 45});
-
+  ok('conditional-expression', 'foo');
 });
 
 function load (basename) {
@@ -225,7 +229,7 @@ function failStatic (basename, ...args) {
     catch (e) {
       if (e instanceof SyntaxError) {
         failed = true;
-        console.log(e.toString());
+        //console.log(e.toString());
       }
       else {
         throw e;

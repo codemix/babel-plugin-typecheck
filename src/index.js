@@ -247,8 +247,15 @@ export default function ({types: t, template}): Object {
             const item = binding.path.get('id');
             annotation = item.node.savedTypeAnnotation || item.getTypeAnnotation();
           }
+
           node.hasBeenTypeChecked = true;
           node.left.hasBeenTypeChecked = true;
+          if (annotation.type === 'AnyTypeAnnotation') {
+            annotation = getAnnotation(path.get('right'));
+            if (annotation.type === 'AnyTypeAnnotation') {
+              return;
+            }
+          }
           const id = node.left;
           const right = path.get('right');
           const ok = staticCheckAnnotation(right, annotation);
@@ -344,7 +351,7 @@ export default function ({types: t, template}): Object {
         return maybeInstanceOfAnnotation(getAnnotation(path), type);
       },
       type ({path, type}) {
-        console.log('TYPE', path.node.type);
+        return null;
       },
       array ({path, types}) {
         const {node} = path;
@@ -352,8 +359,11 @@ export default function ({types: t, template}): Object {
           if (types.length === 0) {
             return true;
           }
-          else if (node.elements.length >= types.length) {
-            console.log('aaa', getAnnotation(path));
+          else if (node.elements.length < types.length) {
+            return false;
+          }
+          else {
+            return null;
           }
         }
         else if (maybeArrayAnnotation(getAnnotation(path)) === false) {
@@ -369,7 +379,8 @@ export default function ({types: t, template}): Object {
         if (annotation.type === 'TypeAnnotation' || annotation.type === 'NullableTypeAnnotation') {
           annotation = annotation.typeAnnotation;
         }
-        //return maybeTupleAnnotation(getAnnotation(path));
+        console.log(annotation);
+        return maybeTupleAnnotation(getAnnotation(path));
       },
       union: checkStaticUnion,
       object: checkStaticObject,
@@ -416,13 +427,42 @@ export default function ({types: t, template}): Object {
     }
   }
 
+  function unionComparer (a: Object, b: Object, comparator: Function): ?boolean {
+    let falseCount = 0;
+    let trueCount = 0;
+    for (let type of a.types) {
+      const result = comparator(type, b);
+      if (result === true) {
+        if (b.type !== 'UnionTypeAnnotation') {
+          return true;
+        }
+        trueCount++;
+      }
+      else if (result === false) {
+        if (b.type === 'UnionTypeAnnotation') {
+          return false;
+        }
+        falseCount++;
+      }
+    }
+    if (falseCount === a.types.length) {
+      return false;
+    }
+    else if (trueCount === a.types.length) {
+      return true;
+    }
+    else {
+      return null;
+    }
+  }
+
   function compareObjectAnnotation (a: Object, b: Object): ?boolean {
     switch (b.type) {
       case 'TypeAnnotation':
       case 'NullableTypeAnnotation':
         return compareObjectAnnotation(a, b.typeAnnotation);
       case 'UnionTypeAnnotation':
-        return b.types.some(type => compareObjectAnnotation(a, type) !== false);
+        return unionComparer(a, b, compareObjectAnnotation);
       case 'VoidTypeAnnotation':
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
@@ -450,7 +490,7 @@ export default function ({types: t, template}): Object {
           return null;
         }
       case 'UnionTypeAnnotation':
-        return b.types.some(type => compareGenericAnnotation(a, type) !== false);
+        return unionComparer(a, b, compareGenericAnnotation);
       default:
         return null;
     }
@@ -471,7 +511,7 @@ export default function ({types: t, template}): Object {
       case 'NullableTypeAnnotation':
         return compareTupleAnnotation(a, b.typeAnnotation);
       case 'UnionTypeAnnotation':
-        return b.types.some(type => compareTupleAnnotation(a, type) !== false);
+        return unionComparer(a, b, compareTupleAnnotation);
       case 'VoidTypeAnnotation':
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
@@ -494,27 +534,8 @@ export default function ({types: t, template}): Object {
       case 'MixedTypeAnnotation':
         return null;
       default:
-
-        return a.types.some(type => compareAnnotations(type, b));
+        return unionComparer(a, b, compareAnnotations);
     }
-
-    let falseCount = 0;
-    for (let type of a.types) {
-      const result = compareAnnotations(type, b);
-      if (result === true) {
-        return true;
-      }
-      else if (result === false) {
-        falseCount++;
-      }
-    }
-    if (falseCount === types.length) {
-      return false;
-    }
-    else {
-      return null;
-    }
-
   }
 
   function compareNullableAnnotation (a: Object, b: Object): ?boolean {
@@ -840,6 +861,13 @@ export default function ({types: t, template}): Object {
           else if (isPolymorphicType(id, scope)) {
             return t.anyTypeAnnotation();
           }
+          else {
+            const binding = scope.getBinding(node.name);
+            const violation = getConstantViolationsBefore(binding, path).pop();
+            if (violation) {
+              return getAnnotation(violation);
+            }
+          }
           return path.getTypeAnnotation();
         case 'NumericLiteral':
         case 'StringLiteral':
@@ -854,10 +882,14 @@ export default function ({types: t, template}): Object {
             }
           }
           break;
+        case 'AssignmentExpression':
+          return getAssignmentExpressionAnnotation(path);
         case 'MemberExpression':
           return getMemberExpressionAnnotation(path);
         case 'ArrayExpression':
           return getArrayExpressionAnnotation(path);
+        case 'ObjectExpression':
+          return getObjectExpressionAnnotation(path);
         case 'BinaryExpression':
           return getBinaryExpressionAnnotation(path);
         case 'BinaryExpression':
@@ -865,12 +897,19 @@ export default function ({types: t, template}): Object {
         case 'LogicalExpression':
           return getLogicalExpressionAnnotation(path);
         case 'ConditionalExpression':
+          return getConditionalExpressionAnnotation(path);
         default:
           return path.getTypeAnnotation();
 
       }
     }
     return node.savedTypeAnnotation || node.returnType || node.typeAnnotation || path.getTypeAnnotation();
+  }
+
+  function getAssignmentExpressionAnnotation (path: Object): ?Object {
+    if (path.node.operator === '=') {
+      return getAnnotation(path.get('right'));
+    }
   }
 
   function getBinaryExpressionAnnotation (path: Object): Object {
@@ -896,8 +935,12 @@ export default function ({types: t, template}): Object {
         case '||':
           ([left, right] = [getAnnotation(left), getAnnotation(right)]);
           if (t.isUnionTypeAnnotation(left)) {
-            left.types.push(right);
-            return left;
+            if (t.isUnionTypeAnnotation(right)) {
+              return t.unionTypeAnnotation(left.types.concat(right.types));
+            }
+            else {
+              return t.unionTypeAnnotation(left.types.concat(right));
+            }
           }
           else {
             return t.unionTypeAnnotation([left, right]);
@@ -907,10 +950,36 @@ export default function ({types: t, template}): Object {
     }
   }
 
+
+  function getConditionalExpressionAnnotation (path: Object): Object {
+    const {node} = path;
+    const consequent = getAnnotation(path.get('consequent'));
+    const alternate = getAnnotation(path.get('alternate'));
+    if (t.isUnionTypeAnnotation(consequent)) {
+      if (t.isUnionTypeAnnotation(alternate)) {
+        return t.unionTypeAnnotation(consequent.types.concat(alternate.types));
+      }
+      else {
+        return t.unionTypeAnnotation(consequent.types.concat(alternate));
+      }
+    }
+    else {
+      return t.unionTypeAnnotation([consequent, alternate]);
+    }
+  }
+
   function getArrayExpressionAnnotation (path: Object): Object {
     return t.genericTypeAnnotation(
       t.identifier('Array'),
       path.get('elements').map(getAnnotation)
+    );
+  }
+
+  function getObjectExpressionAnnotation (path: Object): Object {
+    return t.objectTypeAnnotation(
+      path.get('properties').map(property => {
+        console.log(property.key, property.value);
+      }).filter(identity)
     );
   }
 
@@ -1415,6 +1484,8 @@ export default function ({types: t, template}): Object {
         return "any value";
       case 'NullableTypeAnnotation':
         return `optional ${humanReadableType(annotation.typeAnnotation, scope)}`;
+      case 'VoidTypeAnnotation':
+        return `void`;
       default:
         throw new Error('Unknown type: ' + annotation.type);
     }
@@ -1607,9 +1678,9 @@ export default function ({types: t, template}): Object {
     );
   }
 
-  function varTypeErrorMessage (node: Object, scope: Object): Object {
+  function varTypeErrorMessage (node: Object, scope: Object, annotation?: Object): Object {
     const name = node.name;
-    const message = `Value of variable "${name}" violates contract, expected ${humanReadableType(node.typeAnnotation, scope)} got `;
+    const message = `Value of variable "${name}" violates contract, expected ${humanReadableType(annotation || node.typeAnnotation, scope)} got `;
     return t.binaryExpression(
       '+',
       t.stringLiteral(message),
