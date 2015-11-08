@@ -1,5 +1,31 @@
 import generate from "babel-generator";
 
+type Node = {
+  type: string;
+};
+
+type Identifier = {
+  type: string;
+  name: string;
+};
+
+type QualifiedTypeIdentifier = {
+  id: Identifier;
+  qualification: Identifier|QualifiedTypeIdentifier;
+};
+
+type TypeAnnotation = {
+  type: string;
+};
+
+type Scope = {};
+
+type NodePath = {
+  type: string;
+  node: Node;
+  scope: Scope;
+};
+
 /**
  * # Typecheck Transformer
  */
@@ -12,7 +38,7 @@ export default function ({types: t, template}): Object {
   /**
    * Binary Operators that can only produce boolean results.
    */
-  const BOOLEAN_BINARY_OPERATORS = [
+  const BOOLEAN_BINARY_OPERATORS: Array<string> = [
     '==',
     '===',
     '>=',
@@ -22,14 +48,14 @@ export default function ({types: t, template}): Object {
     'instanceof'
   ];
 
-  const checks = createChecks();
-  const staticChecks = createStaticChecks();
+  const checks: Object = createChecks();
+  const staticChecks: Object = createStaticChecks();
 
-  const checkIsArray = template(`Array.isArray(input)`);
-  const checkIsObject = template(`input != null && typeof input === 'object'`);
-  const checkNotNull = template(`input != null`);
+  const checkIsArray: (() => Node) = template(`Array.isArray(input)`);
+  const checkIsObject: (() => Node) = template(`input != null && typeof input === 'object'`);
+  const checkNotNull: (() => Node) = template(`input != null`);
 
-  const declareTypeChecker = template(`
+  const declareTypeChecker: (() => Node) = template(`
     const id = (function () {
       function id (input) {
         return check;
@@ -40,13 +66,13 @@ export default function ({types: t, template}): Object {
     })();
   `);
 
-  const guard = template(`
+  const guard: (() => Node) = template(`
     if (!check) {
       throw new TypeError(message);
     }
   `);
 
-  const thrower = template(`
+  const thrower: (() => Node) = template(`
     if (check) {
       ret;
     }
@@ -55,45 +81,41 @@ export default function ({types: t, template}): Object {
     }
   `);
 
-  const readableName = template(`
+  const readableName: (() => Node) = template(`
     input === null ? 'null' : typeof input === 'object' && input.constructor ? input.constructor.name || '[Unknown Object]' : typeof input
   `);
 
-  const stack = [];
+  const stack:Array<{node: Node; returns: number; isVoid: ?boolean; type: ?TypeAnnotation}> = [];
 
   return {
     visitor: {
-      TypeAlias (path: Object): void {
+      TypeAlias (path: NodePath): void {
         path.replaceWith(createTypeAliasChecks(path));
       },
 
-      ExportNamedDeclaration: {
-        enter (path: Object) {
-          const {node, scope} = path;
-          if (node.declaration.type === 'TypeAlias') {
-            path.replaceWith(t.exportNamedDeclaration(
-              createTypeAliasChecks({node: node.declaration, scope}),
-              [],
-              null
-            ));
-          }
+      ExportNamedDeclaration (path: NodePath): void {
+        const {node, scope} = path;
+        if (node.declaration.type === 'TypeAlias') {
+          path.replaceWith(t.exportNamedDeclaration(
+            createTypeAliasChecks(path.get('declaration')),
+            [],
+            null
+          ));
         }
       },
 
-      ImportDeclaration: {
-        enter (path: Object) {
-          const {node, scope} = path;
-          if (node.importKind === 'type') {
-            // @fixme
-          }
-          else if (node.importKind === 'typeof') {
-            // @fixme
-          }
+      ImportDeclaration (path: NodePath): void {
+        const {node, scope} = path;
+        if (node.importKind === 'type') {
+          // @fixme
+        }
+        else if (node.importKind === 'typeof') {
+          // @fixme
         }
       },
 
       Function: {
-        enter (path: Object) {
+        enter (path: NodePath): void {
           const {node, scope} = path;
           const paramChecks = collectParamChecks(path);
           if (node.type === "ArrowFunctionExpression" && node.expression) {
@@ -105,7 +127,7 @@ export default function ({types: t, template}): Object {
           node.savedTypeAnnotation = node.returnType;
           stack.push({node, returns: 0, isVoid, type: node.returnType});
         },
-        exit (path: Object) {
+        exit (path: NodePath): void {
           const {node, returns, isVoid, type} = stack.pop();
           if (isVoid === false && returns === 0) {
             throw new SyntaxError(`Function ${node.id ? `"${node.id.name}" ` : ''}did not return a value, expected ${humanReadableType(type, path.scope)}`);
@@ -113,196 +135,188 @@ export default function ({types: t, template}): Object {
         }
       },
 
-      ReturnStatement: {
-        enter (path: Object) {
-          const {node, parent, scope} = path;
-          if (stack.length === 0 || node.isTypeChecked) {
-            return;
+      ReturnStatement (path: NodePath): void {
+        const {node, parent, scope} = path;
+        if (stack.length === 0 || node.isTypeChecked) {
+          return;
+        }
+        stack[stack.length - 1].returns++;
+        const {node: fn} = stack[stack.length - 1];
+        const {returnType} = fn;
+        if (!returnType) {
+          return;
+        }
+        if (!node.argument) {
+          if (maybeNullableAnnotation(returnType) === false) {
+            throw new SyntaxError(`Function ${fn.id ? `"${fn.id.name}" ` : ''}did not return a value, expected ${humanReadableType(returnType, path.scope)}`);
           }
-          stack[stack.length - 1].returns++;
-          const {node: fn} = stack[stack.length - 1];
-          const {returnType} = fn;
-          if (!returnType) {
-            return;
+          return;
+        }
+        let id;
+        if (node.argument.type === 'Identifier') {
+          id = node.argument;
+        }
+        else {
+          id = scope.generateUidIdentifierBasedOnNode(node.argument);
+        }
+        const ok = staticCheckAnnotation(path.get("argument"), returnType);
+        if (ok === true) {
+          return;
+        }
+        else if (ok === false) {
+          throw new SyntaxError(`Invalid return type, expected ${humanReadableType(returnType, scope)}`);
+        }
+        const check = checkAnnotation(id, returnType, scope);
+        if (!check) {
+          return;
+        }
+        if (parent.type !== 'BlockStatement' && parent.type !== 'Program') {
+          const block = [];
+          if (node.argument.type !== 'Identifier') {
+            scope.push({id: id});
+            block.push(t.expressionStatement(
+              t.assignmentExpression(
+                '=',
+                id,
+                node.argument
+              ))
+            );
           }
-          if (!node.argument) {
-            if (maybeNullableAnnotation(returnType) === false) {
-              throw new SyntaxError(`Function ${fn.id ? `"${fn.id.name}" ` : ''}did not return a value, expected ${humanReadableType(returnType, path.scope)}`);
-            }
-            return;
+          const ret = t.returnStatement(id);
+          ret.isTypeChecked = true;
+          block.push(thrower({
+            check,
+            ret,
+            message: returnTypeErrorMessage(path, fn, id)
+          }));
+          path.replaceWith(t.blockStatement(block));
+        }
+        else {
+          if (node.argument.type !== 'Identifier') {
+            scope.push({id: id});
+            path.insertBefore(t.expressionStatement(
+              t.assignmentExpression(
+                '=',
+                id,
+                node.argument
+              ))
+            );
           }
-          let id;
-          if (node.argument.type === 'Identifier') {
-            id = node.argument;
-          }
-          else {
-            id = scope.generateUidIdentifierBasedOnNode(node.argument);
-          }
-          const ok = staticCheckAnnotation(path.get("argument"), returnType);
-          if (ok === true) {
-            return;
-          }
-          else if (ok === false) {
-            throw new SyntaxError(`Invalid return type, expected ${humanReadableType(returnType, scope)}`);
-          }
-          const check = checkAnnotation(id, returnType, scope);
-          if (!check) {
-            return;
-          }
-          if (parent.type !== 'BlockStatement' && parent.type !== 'Program') {
-            const block = [];
-            if (node.argument.type !== 'Identifier') {
-              scope.push({id: id});
-              block.push(t.expressionStatement(
-                t.assignmentExpression(
-                  '=',
-                  id,
-                  node.argument
-                ))
-              );
-            }
-            const ret = t.returnStatement(id);
-            ret.isTypeChecked = true;
-            block.push(thrower({
-              check,
-              ret,
-              message: returnTypeErrorMessage(path, fn, id)
-            }));
-            path.replaceWith(t.blockStatement(block));
-          }
-          else {
-            if (node.argument.type !== 'Identifier') {
-              scope.push({id: id});
-              path.insertBefore(t.expressionStatement(
-                t.assignmentExpression(
-                  '=',
-                  id,
-                  node.argument
-                ))
-              );
-            }
-            const ret = t.returnStatement(id);
-            ret.isTypeChecked = true;
-            path.replaceWith(thrower({
-              check,
-              ret,
-              message: returnTypeErrorMessage(path, fn, id)
-            }));
-          }
+          const ret = t.returnStatement(id);
+          ret.isTypeChecked = true;
+          path.replaceWith(thrower({
+            check,
+            ret,
+            message: returnTypeErrorMessage(path, fn, id)
+          }));
         }
       },
 
-      VariableDeclaration: {
-        enter (path: Object) {
-          const {node, scope} = path;
-          const collected = [];
-          const declarations = path.get("declarations");
-          for (let i = 0; i < node.declarations.length; i++) {
-            const declaration = node.declarations[i];
-            const {id, init} = declaration;
-            if (!id.typeAnnotation || id.hasBeenTypeChecked) {
-              continue;
-            }
-            id.savedTypeAnnotation = id.typeAnnotation;
-            id.hasBeenTypeChecked = true;
-            const ok = staticCheckAnnotation(declarations[i], id.typeAnnotation);
-            if (ok === true) {
-              continue;
-            }
-            else if (ok === false) {
-              throw new SyntaxError(`Invalid assignment value, expected ${humanReadableType(id.typeAnnotation, scope)}`);
-            }
-            const check = checkAnnotation(id, id.typeAnnotation, scope);
-            if (check) {
-              collected.push(guard({
-                check,
-                message: varTypeErrorMessage(id, scope)
-              }));
-            }
+      VariableDeclaration (path: NodePath): void {
+        const {node, scope} = path;
+        const collected = [];
+        const declarations = path.get("declarations");
+        for (let i = 0; i < node.declarations.length; i++) {
+          const declaration = node.declarations[i];
+          const {id, init} = declaration;
+          if (!id.typeAnnotation || id.hasBeenTypeChecked) {
+            continue;
           }
-          if (collected.length > 0) {
-            const check = collected.reduce((check, branch) => {
-              branch.alternate = check;
-              return branch;
-            });
-            if (path.parent.type === 'Program' || path.parent.type === 'BlockStatement') {
-              path.insertAfter(check);
-            }
-            else {
-              path.replaceWith(t.blockStatement([node, check]));
-            }
-          }
-        }
-      },
-
-      AssignmentExpression: {
-        enter (path: Object) {
-          const {node, scope} = path;
-          if (node.hasBeenTypeChecked || node.left.hasBeenTypeChecked) {
-            return;
-          }
-          const binding = scope.getBinding(node.left.name);
-          if (!binding || binding.path.type !== 'VariableDeclarator') {
-            return;
-          }
-          let annotation = path.get('left').getTypeAnnotation();
-          if (annotation.type === 'AnyTypeAnnotation') {
-            const item = binding.path.get('id');
-            annotation = item.node.savedTypeAnnotation || item.getTypeAnnotation();
-          }
-
-          node.hasBeenTypeChecked = true;
-          node.left.hasBeenTypeChecked = true;
-          if (annotation.type === 'AnyTypeAnnotation') {
-            annotation = getAnnotation(path.get('right'));
-            if (allowsAny(annotation)) {
-              return;
-            }
-          }
-          const id = node.left;
-          const right = path.get('right');
-          const ok = staticCheckAnnotation(right, annotation);
-          if (ok === true) {
-            return;
-          }
-          else if (ok === false) {
-            throw new SyntaxError(`Invalid assignment value, expected ${humanReadableType(annotation, scope)}`);
-          }
-          const check = checkAnnotation(id, annotation, scope);
-          if (!id.typeAnnotation) {
-            id.typeAnnotation = annotation;
-          }
+          id.savedTypeAnnotation = id.typeAnnotation;
           id.hasBeenTypeChecked = true;
+          const ok = staticCheckAnnotation(declarations[i], id.typeAnnotation);
+          if (ok === true) {
+            continue;
+          }
+          else if (ok === false) {
+            throw new SyntaxError(`Invalid assignment value, expected ${humanReadableType(id.typeAnnotation, scope)}`);
+          }
+          const check = checkAnnotation(id, id.typeAnnotation, scope);
           if (check) {
-            path.getStatementParent().insertAfter(guard({
+            collected.push(guard({
               check,
               message: varTypeErrorMessage(id, scope)
             }));
           }
         }
+        if (collected.length > 0) {
+          const check = collected.reduce((check, branch) => {
+            branch.alternate = check;
+            return branch;
+          });
+          if (path.parent.type === 'Program' || path.parent.type === 'BlockStatement') {
+            path.insertAfter(check);
+          }
+          else {
+            path.replaceWith(t.blockStatement([node, check]));
+          }
+        }
       },
 
-      TypeCastExpression: {
-        enter (path: Object) {
-          const {node} = path;
-          let target;
-          switch (node.expression.type) {
-            case 'Identifier':
-              target = node.expression;
-              break;
-            case 'AssignmentExpression':
-              target = node.expression.left;
-              break;
-            default:
-              // unsupported.
-              return;
-          }
-          const id = path.scope.getBindingIdentifier(target.name);
-          if (!id) {
+      AssignmentExpression (path: NodePath): void {
+        const {node, scope} = path;
+        if (node.hasBeenTypeChecked || node.left.hasBeenTypeChecked) {
+          return;
+        }
+        const binding = scope.getBinding(node.left.name);
+        if (!binding || binding.path.type !== 'VariableDeclarator') {
+          return;
+        }
+        let annotation = path.get('left').getTypeAnnotation();
+        if (annotation.type === 'AnyTypeAnnotation') {
+          const item = binding.path.get('id');
+          annotation = item.node.savedTypeAnnotation || item.getTypeAnnotation();
+        }
+
+        node.hasBeenTypeChecked = true;
+        node.left.hasBeenTypeChecked = true;
+        if (annotation.type === 'AnyTypeAnnotation') {
+          annotation = getAnnotation(path.get('right'));
+          if (allowsAny(annotation)) {
             return;
           }
-          id.savedTypeAnnotation = path.getTypeAnnotation();
         }
+        const id = node.left;
+        const right = path.get('right');
+        const ok = staticCheckAnnotation(right, annotation);
+        if (ok === true) {
+          return;
+        }
+        else if (ok === false) {
+          throw new SyntaxError(`Invalid assignment value, expected ${humanReadableType(annotation, scope)}`);
+        }
+        const check = checkAnnotation(id, annotation, scope);
+        if (!id.typeAnnotation) {
+          id.typeAnnotation = annotation;
+        }
+        id.hasBeenTypeChecked = true;
+        if (check) {
+          path.getStatementParent().insertAfter(guard({
+            check,
+            message: varTypeErrorMessage(id, scope)
+          }));
+        }
+      },
+
+      TypeCastExpression (path: NodePath): void {
+        const {node} = path;
+        let target;
+        switch (node.expression.type) {
+          case 'Identifier':
+            target = node.expression;
+            break;
+          case 'AssignmentExpression':
+            target = node.expression.left;
+            break;
+          default:
+            // unsupported.
+            return;
+        }
+        const id = path.scope.getBindingIdentifier(target.name);
+        if (!id) {
+          return;
+        }
+        id.savedTypeAnnotation = path.getTypeAnnotation();
       }
     }
   };
@@ -331,32 +345,32 @@ export default function ({types: t, template}): Object {
 
   function createStaticChecks (): Object {
     return {
-      string (path: Object): ?boolean {
+      string (path: NodePath): ?boolean {
         return maybeStringAnnotation(getAnnotation(path));
       },
-      number (path: Object) {
+      number (path: NodePath): ?boolean {
         return maybeNumberAnnotation(getAnnotation(path));
       },
-      boolean (path: Object) {
+      boolean (path: NodePath): ?boolean {
         return maybeBooleanAnnotation(getAnnotation(path));
       },
-      function (path: Object) {
+      function (path: NodePath): ?boolean {
         return maybeFunctionAnnotation(getAnnotation(path));
       },
-      any (path: Object) {
+      any (path: NodePath): ?boolean {
         return null;
       },
-      instanceof ({path, type}) {
+      instanceof ({path, type}): ?boolean {
         const {node, scope} = path;
         if (type.name === 'Object' && !scope.hasBinding('Object') && node.type === 'ObjectExpression') {
           return true;
         }
         return maybeInstanceOfAnnotation(getAnnotation(path), type);
       },
-      type ({path, type}) {
+      type ({path, type}): ?boolean {
         return null;
       },
-      array ({path, types}) {
+      array ({path, types}): ?boolean {
         const {node} = path;
         if (node.type === 'ArrayExpression') {
           if (types.length === 0) {
@@ -391,7 +405,7 @@ export default function ({types: t, template}): Object {
     };
   }
 
-  function compareAnnotations (a: Object, b: Object): ?boolean {
+  function compareAnnotations (a: TypeAnnotation, b: TypeAnnotation): ?boolean {
 
     if (a.type === 'TypeAnnotation') {
       a = a.typeAnnotation;
@@ -430,7 +444,7 @@ export default function ({types: t, template}): Object {
     }
   }
 
-  function unionComparer (a: Object, b: Object, comparator: Function): ?boolean {
+  function unionComparer (a: TypeAnnotation, b: TypeAnnotation, comparator: (a:TypeAnnotation, b:TypeAnnotation) => ?boolean): ?boolean {
     let falseCount = 0;
     let trueCount = 0;
     if (!a.types) {
@@ -463,7 +477,7 @@ export default function ({types: t, template}): Object {
     }
   }
 
-  function compareObjectAnnotation (a: Object, b: Object): ?boolean {
+  function compareObjectAnnotation (a: Node, b: Node): ?boolean {
     switch (b.type) {
       case 'TypeAnnotation':
       case 'NullableTypeAnnotation':
@@ -484,7 +498,7 @@ export default function ({types: t, template}): Object {
     }
   }
 
-  function compareGenericAnnotation (a: Object, b: Object): ?boolean {
+  function compareGenericAnnotation (a: Node, b: Node): ?boolean {
     switch (b.type) {
       case 'TypeAnnotation':
       case 'NullableTypeAnnotation':
@@ -503,7 +517,7 @@ export default function ({types: t, template}): Object {
     }
   }
 
-  function compareTupleAnnotation (a: Object, b: Object): ?boolean {
+  function compareTupleAnnotation (a: Node, b: Node): ?boolean {
     if (b.type === 'TupleTypeAnnotation') {
       if (b.types.length === 0) {
         return null;
@@ -533,7 +547,7 @@ export default function ({types: t, template}): Object {
     }
   }
 
-  function compareUnionAnnotation (a: Object, b: Object): ?boolean {
+  function compareUnionAnnotation (a: Node, b: Node): ?boolean {
     switch (b.type) {
       case 'NullableTypeAnnotation':
         return compareUnionAnnotation(a, b.typeAnnotation);
@@ -545,7 +559,7 @@ export default function ({types: t, template}): Object {
     }
   }
 
-  function compareNullableAnnotation (a: Object, b: Object): ?boolean {
+  function compareNullableAnnotation (a: Node, b: Node): ?boolean {
     switch (b.type) {
       case 'TypeAnnotation':
         return compareNullableAnnotation(a, b.typeAnnotation);
@@ -561,7 +575,7 @@ export default function ({types: t, template}): Object {
     }
   }
 
-  function arrayExpressionToTupleAnnotation (path): Object {
+  function arrayExpressionToTupleAnnotation (path: NodePath): TypeAnnotation {
     const elements = path.get('elements');
     return t.tupleTypeAnnotation(elements.map(element => getAnnotation(element)));
   }
@@ -592,7 +606,7 @@ export default function ({types: t, template}): Object {
   function checkStaticObject ({path, type}) {
   }
 
-  function checkStaticNullable ({path, type}): ? boolean {
+  function checkStaticNullable ({path, type}): ?boolean {
     const annotation = getAnnotation(path);
     if (annotation.type === 'VoidTypeAnnotation' || annotation.type === 'NullableTypeAnnotation') {
       return true;
@@ -602,7 +616,7 @@ export default function ({types: t, template}): Object {
     }
   }
 
-  function checkNullable ({input, type, scope}): ?Object {
+  function checkNullable ({input, type, scope}): ?Node {
     const check = checkAnnotation(input, type, scope);
     if (!check) {
       return;
@@ -614,7 +628,7 @@ export default function ({types: t, template}): Object {
     );
   }
 
-  function checkUnion ({input, types, scope}): ?Object {
+  function checkUnion ({input, types, scope}): ?Node {
     const checks = types.map(type => checkAnnotation(input, type, scope)).filter(identity);
     return checks.reduce((last, check, index) => {
       if (last == null) {
@@ -628,7 +642,7 @@ export default function ({types: t, template}): Object {
     }, null);
   }
 
-  function checkArray ({input, types, scope}): Object {
+  function checkArray ({input, types, scope}): Node {
     if (types.length === 0) {
       return checkIsArray({input}).expression;
     }
@@ -687,7 +701,7 @@ export default function ({types: t, template}): Object {
     }
   }
 
-  function checkTuple ({input, types, scope}): Object {
+  function checkTuple ({input, types, scope}): Node {
     if (types.length === 0) {
       return checkIsArray({input}).expression;
     }
@@ -727,7 +741,7 @@ export default function ({types: t, template}): Object {
     ));
   }
 
-  function checkObject ({input, properties, scope}): Object {
+  function checkObject ({input, properties, scope}): Node {
     return properties.reduce((expr, prop, index) => {
       const target = t.memberExpression(input, prop.key);
       let check = checkAnnotation(target, prop.value, scope);
@@ -751,7 +765,7 @@ export default function ({types: t, template}): Object {
     }, checkIsObject({input}).expression);
   }
 
-  function createTypeAliasChecks (path: Object) {
+  function createTypeAliasChecks (path: NodePath): Node {
     const {node, scope} = path;
     const {id, right: annotation} = node;
     const input = t.identifier('input');
@@ -761,7 +775,7 @@ export default function ({types: t, template}): Object {
     return declaration;
   }
 
-  function checkAnnotation (input: Object, annotation: Object, scope: Object): ?Object {
+  function checkAnnotation (input: Node, annotation: TypeAnnotation, scope: Scope): ?Node {
     switch (annotation.type) {
       case 'TypeAnnotation':
         return checkAnnotation(input, annotation.typeAnnotation, scope);
@@ -812,7 +826,7 @@ export default function ({types: t, template}): Object {
     }
   }
 
-  function staticCheckAnnotation (path: Object, annotation: Object) {
+  function staticCheckAnnotation (path: NodePath, annotation: TypeAnnotation): ?boolean {
     const other = getAnnotation(path);
 
     switch (annotation.type) {
@@ -836,7 +850,7 @@ export default function ({types: t, template}): Object {
   /**
    * Get the type annotation for a given node.
    */
-  function getAnnotation (path: Object) {
+  function getAnnotation (path: NodePath): TypeAnnotation {
     let annotation = getAnnotationShallow(path);
     while (annotation && annotation.type === 'TypeAnnotation') {
       annotation = annotation.typeAnnotation;
@@ -844,7 +858,7 @@ export default function ({types: t, template}): Object {
     return annotation || t.anyTypeAnnotation();
   }
 
-  function getAnnotationShallow (path: Object): ?Object {
+  function getAnnotationShallow (path: NodePath): ?TypeAnnotation {
     const {node, scope} = path;
     if (node.type === 'TypeAlias') {
       return node.right;
@@ -913,7 +927,7 @@ export default function ({types: t, template}): Object {
     return node.savedTypeAnnotation || node.returnType || node.typeAnnotation || path.getTypeAnnotation();
   }
 
-  function getObjectMethodAnnotation (path: Object): ?Object {
+  function getObjectMethodAnnotation (path: NodePath): ?TypeAnnotation {
     const {node} = path;
     return t.functionTypeAnnotation(
       null,
@@ -923,13 +937,13 @@ export default function ({types: t, template}): Object {
     );
   }
 
-  function getAssignmentExpressionAnnotation (path: Object): ?Object {
+  function getAssignmentExpressionAnnotation (path: NodePath): ?TypeAnnotation {
     if (path.node.operator === '=') {
       return getAnnotation(path.get('right'));
     }
   }
 
-  function getBinaryExpressionAnnotation (path: Object): Object {
+  function getBinaryExpressionAnnotation (path: NodePath): TypeAnnotation {
     const {node} = path;
     if (isBooleanExpression(node)) {
       return t.booleanTypeAnnotation();
@@ -939,7 +953,7 @@ export default function ({types: t, template}): Object {
     }
   }
 
-  function getLogicalExpressionAnnotation (path: Object): Object {
+  function getLogicalExpressionAnnotation (path: NodePath): TypeAnnotation {
     const {node} = path;
     if (isBooleanExpression(node)) {
       return t.booleanTypeAnnotation();
@@ -968,7 +982,7 @@ export default function ({types: t, template}): Object {
   }
 
 
-  function getConditionalExpressionAnnotation (path: Object): Object {
+  function getConditionalExpressionAnnotation (path: NodePath): TypeAnnotation {
     const {node} = path;
     const consequent = getAnnotation(path.get('consequent'));
     const alternate = getAnnotation(path.get('alternate'));
@@ -985,14 +999,14 @@ export default function ({types: t, template}): Object {
     }
   }
 
-  function getArrayExpressionAnnotation (path: Object): Object {
+  function getArrayExpressionAnnotation (path: NodePath): TypeAnnotation {
     return t.genericTypeAnnotation(
       t.identifier('Array'),
       path.get('elements').map(getAnnotation)
     );
   }
 
-  function getObjectExpressionAnnotation (path: Object): Object {
+  function getObjectExpressionAnnotation (path: NodePath): TypeAnnotation {
     const annotation = t.objectTypeAnnotation(
       path.get('properties').map(property => {
         if (property.computed) {
@@ -1016,7 +1030,7 @@ export default function ({types: t, template}): Object {
     return annotation;
   }
 
-  function getMemberExpressionAnnotation (path: Object): Object {
+  function getMemberExpressionAnnotation (path: NodePath): TypeAnnotation {
     if (path.node.computed) {
       return getComputedMemberExpressionAnnotation(path);
     }
@@ -1045,7 +1059,7 @@ export default function ({types: t, template}): Object {
     return path.getTypeAnnotation();
   }
 
-  function getComputedMemberExpressionAnnotation (path: Object): Object {
+  function getComputedMemberExpressionAnnotation (path: NodePath): TypeAnnotation {
     const object = path.get('object');
     const property = path.get('property');
     let objectAnnotation = getAnnotation(object);
@@ -1079,7 +1093,7 @@ export default function ({types: t, template}): Object {
     return path.getTypeAnnotation();
   }
 
-  function getFunctionForIdentifier (path: Object): boolean|Object {
+  function getFunctionForIdentifier (path: NodePath): boolean|Node {
     if (path.type !== 'Identifier') {
       return false;
     }
@@ -1094,7 +1108,7 @@ export default function ({types: t, template}): Object {
    * Returns `true` if the annotation is definitely for an array,
    * otherwise `false`.
    */
-  function isStrictlyArrayAnnotation (annotation: Object): boolean {
+  function isStrictlyArrayAnnotation (annotation: TypeAnnotation): boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
         return isStrictlyArrayAnnotation(annotation.typeAnnotation);
@@ -1111,7 +1125,7 @@ export default function ({types: t, template}): Object {
    * Returns `true` if the annotation is compatible with a number,
    * `false` if it definitely isn't, or `null` if we're not sure.
    */
-  function maybeNumberAnnotation (annotation: Object): ?boolean {
+  function maybeNumberAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
       case 'NullableTypeAnnotation':
@@ -1161,7 +1175,7 @@ export default function ({types: t, template}): Object {
    * Returns `true` if the annotation is compatible with a string,
    * `false` if it definitely isn't, or `null` if we're not sure.
    */
-  function maybeStringAnnotation (annotation: Object): ?boolean {
+  function maybeStringAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
       case 'NullableTypeAnnotation':
@@ -1212,7 +1226,7 @@ export default function ({types: t, template}): Object {
    * Returns `true` if the annotation is compatible with a boolean,
    * `false` if it definitely isn't, or `null` if we're not sure.
    */
-  function maybeBooleanAnnotation (annotation: Object): ?boolean {
+  function maybeBooleanAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
       case 'NullableTypeAnnotation':
@@ -1263,7 +1277,7 @@ export default function ({types: t, template}): Object {
    * Returns `true` if the annotation is compatible with a function,
    * `false` if it definitely isn't, or `null` if we're not sure.
    */
-  function maybeFunctionAnnotation (annotation: Object): ?boolean {
+  function maybeFunctionAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
       case 'NullableTypeAnnotation':
@@ -1312,7 +1326,7 @@ export default function ({types: t, template}): Object {
    * Returns `true` if the annotation is compatible with an undefined or null type,
    * `false` if it definitely isn't, or `null` if we're not sure.
    */
-  function maybeNullableAnnotation (annotation: Object): ?boolean {
+  function maybeNullableAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'NullableTypeAnnotation':
       case 'VoidTypeAnnotation':
@@ -1359,7 +1373,7 @@ export default function ({types: t, template}): Object {
    * Returns `true` if the annotation is compatible with an object type,
    * `false` if it definitely isn't, or `null` if we're not sure.
    */
-  function maybeInstanceOfAnnotation (annotation: Object, expected: Object): ?boolean {
+  function maybeInstanceOfAnnotation (annotation: TypeAnnotation, expected: Identifier): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
       case 'NullableTypeAnnotation':
@@ -1406,7 +1420,7 @@ export default function ({types: t, template}): Object {
    * Returns `true` if the annotation is compatible with an array,
    * `false` if it definitely isn't, or `null` if we're not sure.
    */
-  function maybeArrayAnnotation (annotation: Object): ?boolean {
+  function maybeArrayAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
       case 'NullableTypeAnnotation':
@@ -1444,7 +1458,7 @@ export default function ({types: t, template}): Object {
    * Returns `true` if the annotation is compatible with a tuple,
    * `false` if it definitely isn't, or `null` if we're not sure.
    */
-  function maybeTupleAnnotation (annotation: Object): ?boolean {
+  function maybeTupleAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
       case 'NullableTypeAnnotation':
@@ -1477,7 +1491,7 @@ export default function ({types: t, template}): Object {
     }
   }
 
-  function humanReadableType (annotation: Object, scope: Object): string {
+  function humanReadableType (annotation: TypeAnnotation, scope: Scope): string {
     switch (annotation.type) {
       case 'TypeAnnotation':
         return humanReadableType(annotation.typeAnnotation, scope);
@@ -1524,7 +1538,7 @@ export default function ({types: t, template}): Object {
     }
   }
 
-  function humanReadableObject (annotation: Object, scope: Object): string {
+  function humanReadableObject (annotation: TypeAnnotation, scope: Scope): string {
     if (annotation.properties.length === 0) {
       return `an object`;
     }
@@ -1534,15 +1548,15 @@ export default function ({types: t, template}): Object {
     }
   }
 
-  function humanReadableArray (annotation: Object, scope: Object): string {
+  function humanReadableArray (annotation: TypeAnnotation, scope: Scope): string {
     return generate(annotation).code;
   }
 
-  function humanReadableTuple (annotation: Object, scope: Object): string {
+  function humanReadableTuple (annotation: TypeAnnotation, scope: Scope): string {
     return generate(annotation).code;
   }
 
-  function isTypeChecker (id: Object, scope: Object): boolean {
+  function isTypeChecker (id: Identifier|QualifiedTypeIdentifier, scope: Scope): boolean {
     const binding = scope.getBinding(id.name);
     if (binding === undefined) {
       return false;
@@ -1551,7 +1565,7 @@ export default function ({types: t, template}): Object {
     return path != null && (path.type === 'TypeAlias' || (path.type === 'VariableDeclaration' && path.node.isTypeChecker));
   }
 
-  function isPolymorphicType (id: Object, scope: Object): boolean {
+  function isPolymorphicType (id: Identifier|QualifiedTypeIdentifier, scope: Scope): boolean {
     const binding = scope.getBinding(id.name);
     if (binding !== undefined) {
       return false;
@@ -1572,7 +1586,7 @@ export default function ({types: t, template}): Object {
     return false;
   }
 
-  function getPolymorphicType (id: Object, scope: Object): ?Object {
+  function getPolymorphicType (id: Identifier|QualifiedTypeIdentifier, scope: Scope): ?Node {
     const binding = scope.getBinding(id.name);
     if (binding !== undefined) {
       return false;
@@ -1593,7 +1607,7 @@ export default function ({types: t, template}): Object {
     return null;
   }
 
-  function collectParamChecks (path: Object): Array {
+  function collectParamChecks (path: NodePath): Array<Node> {
     return path.get('params').map((param) => {
       const {node} = param;
       if (node.type === 'AssignmentPattern') {
@@ -1612,7 +1626,7 @@ export default function ({types: t, template}): Object {
     }).filter(identity);
   }
 
-  function createParamGuard (path: Object): ?Object {
+  function createParamGuard (path: NodePath): ?Node {
     const {node, scope} = path;
 
     node.hasBeenTypeChecked = true;
@@ -1652,17 +1666,17 @@ export default function ({types: t, template}): Object {
     });
   }
 
-  function createDefaultParamGuard (path: Object): ?Object {
+  function createDefaultParamGuard (path: NodePath): ?Node {
     const {node, scope} = path;
     const {left: id, right: value} = node;
     const ok = staticCheckAnnotation(path.get('right'), id.typeAnnotation);
     if (ok === false) {
       throw new SyntaxError(`Invalid default value for argument "${id.name}", expected ${humanReadableType(id.typeAnnotation, scope)}.`);
     }
-    return createParamGuard({node: id, scope});
+    return createParamGuard(path.get('left'));
   }
 
-  function createRestParamGuard (path: Object): ?Object {
+  function createRestParamGuard (path: NodePath): ?Node {
     const {node, scope} = path;
     const {argument: id} = node;
     id.hasBeenTypeChecked = true;
@@ -1688,7 +1702,7 @@ export default function ({types: t, template}): Object {
     });
   }
 
-  function returnTypeErrorMessage (path: Object, fn: Object, id: ?Object): Object {
+  function returnTypeErrorMessage (path: NodePath, fn: Node, id: ?Identifier): Node {
     const {node, scope} = path;
     const name = fn.id ? fn.id.name : '';
     const message = `Function ${name ? `"${name}" ` : ''}return value violates contract, expected ${humanReadableType(fn.returnType, scope)} got `;
@@ -1700,7 +1714,7 @@ export default function ({types: t, template}): Object {
     );
   }
 
-  function paramTypeErrorMessage (node: Object, scope: Object, typeAnnotation: Object = node.typeAnnotation): Object {
+  function paramTypeErrorMessage (node: Node, scope: Scope, typeAnnotation: TypeAnnotation = node.typeAnnotation): Node {
     const name = node.name;
     const message = `Value of ${node.optional ? 'optional ' : ''}argument "${name}" violates contract, expected ${humanReadableType(typeAnnotation, scope)} got `;
 
@@ -1711,7 +1725,7 @@ export default function ({types: t, template}): Object {
     );
   }
 
-  function varTypeErrorMessage (node: Object, scope: Object, annotation?: Object): Object {
+  function varTypeErrorMessage (node: Node, scope: Scope, annotation?: TypeAnnotation): Node {
     const name = node.name;
     const message = `Value of variable "${name}" violates contract, expected ${humanReadableType(annotation || node.typeAnnotation, scope)} got `;
     return t.binaryExpression(
@@ -1724,7 +1738,7 @@ export default function ({types: t, template}): Object {
   /**
    * Determine whether the given node can produce purely boolean results.
    */
-  function isBooleanExpression (node: Object) {
+  function isBooleanExpression (node: Node) {
     if (node.type === 'BinaryExpression' && BOOLEAN_BINARY_OPERATORS.indexOf(node.operator) > -1) {
       return true;
     }
@@ -1739,7 +1753,7 @@ export default function ({types: t, template}): Object {
   /**
    * Convert type specifier to expression.
    */
-  function createTypeExpression (node: Object) : Object {
+  function createTypeExpression (node: Node) : Object {
     if (node.type == 'Identifier') {
       return node;
     }
@@ -1756,7 +1770,7 @@ export default function ({types: t, template}): Object {
   /**
    * Get name of a type as a string.
    */
-  function getTypeName (node: Object): string {
+  function getTypeName (node: Node): string {
     if(node.type == 'Identifier') {
       return node.name
     }
@@ -1803,7 +1817,7 @@ export default function ({types: t, template}): Object {
   /**
    * Determine whether the given annotation allows any value.
    */
-  function allowsAny (annotation: Object): boolean {
+  function allowsAny (annotation: TypeAnnotation): boolean {
     if (annotation.type === 'TypeAnnotation' || annotation.type === 'NullableTypeAnnotation') {
       return allowsAny(annotation.typeAnnotation);
     }
@@ -1821,7 +1835,7 @@ export default function ({types: t, template}): Object {
   /**
    * Determine whether a given node is nully (null or undefined).
    */
-  function isNodeNully (node: ?Object): boolean {
+  function isNodeNully (node: ?Node): boolean {
     if (node == null) {
       return true;
     }
