@@ -12,6 +12,8 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('map-contents', new Map([['a', 1], ['b', 2], ['c', 3]]));
+  failWith('Value of argument "input" violates contract, expected Map<string, number> got Map', 'map-contents', new Map([['a', 1], ['b', 2], ['c', 'nope']]));
   ok('interface', {name: 'hello world'});
   ok('interface-extends', {name: 'hello world', age: 123});
   ok('interface-multi-extends', {name: 'hello world', age: 123, isActive: true});

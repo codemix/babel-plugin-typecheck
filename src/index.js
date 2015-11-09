@@ -52,6 +52,8 @@ export default function ({types: t, template}): Object {
   const staticChecks: Object = createStaticChecks();
 
   const checkIsArray: (() => Node) = template(`Array.isArray(input)`);
+  const checkIsMap: (() => Node) = template(`input instanceof Map`);
+  const checkIsSet: (() => Node) = template(`input instanceof Set`);
   const checkIsObject: (() => Node) = template(`input != null && typeof input === 'object'`);
   const checkNotNull: (() => Node) = template(`input != null`);
 
@@ -80,7 +82,23 @@ export default function ({types: t, template}): Object {
     input === null ? 'null' : typeof input === 'object' && input.constructor ? input.constructor.name || '[Unknown Object]' : typeof input
   `);
 
-  const stack:Array<{node: Node; returns: number; isVoid: ?boolean; type: ?TypeAnnotation}> = [];
+  const checkMapKeys: (() => Node) = template(`
+    input instanceof Map && Array.from(input.keys()).every(key => keyCheck)
+  `);
+
+  const checkMapValues: (() => Node) = template(`
+    input instanceof Map && Array.from(input.values()).every(value => valueCheck)
+  `);
+
+  const checkMapEntries: (() => Node) = template(`
+    input instanceof Map && Array.from(input).every(([key, value]) => keyCheck && valueCheck)
+  `);
+
+  const checkSetEntries: (() => Node) = template(`
+    input instanceof Set && Array.from(input).every(value => check)
+  `);
+
+  const stack: Array<{node: Node; returns: number; isVoid: ?boolean; type: ?TypeAnnotation}> = [];
 
   return {
     inherits: require("babel-plugin-syntax-flow"),
@@ -358,6 +376,7 @@ export default function ({types: t, template}): Object {
       any: () => template(`input != null`).expression,
       union: checkUnion,
       array: checkArray,
+      map: checkMap,
       tuple: checkTuple,
       object: checkObject,
       nullable: checkNullable
@@ -686,6 +705,30 @@ export default function ({types: t, template}): Object {
     }, null);
   }
 
+  function checkMap ({input, types, scope}): Node {
+    const [keyType, valueType] = types;
+    const key = t.identifier('key');
+    const value = t.identifier('value');
+    const keyCheck = keyType ? checkAnnotation(key, keyType, scope) : null;
+    const valueCheck = valueType ? checkAnnotation(value, valueType, scope) : null;
+    if (!keyCheck) {
+      if (!valueCheck) {
+        return checkIsMap({input}).expression;
+      }
+      else {
+        return checkMapValues({input, value, valueCheck}).expression;
+      }
+    }
+    else {
+      if (!valueCheck) {
+        return checkMapKeys({input, key, keyCheck}).expression;
+      }
+      else {
+        return checkMapEntries({input, key, value, keyCheck, valueCheck}).expression;
+      }
+    }
+  }
+
   function checkArray ({input, types, scope}): Node {
     if (types.length === 0) {
       return checkIsArray({input}).expression;
@@ -848,6 +891,9 @@ export default function ({types: t, template}): Object {
       case 'GenericTypeAnnotation':
         if (annotation.id.name === 'Array') {
           return checks.array({input, types: annotation.typeParameters ? annotation.typeParameters.params : [], scope});
+        }
+        else if (annotation.id.name === 'Map') {
+          return checks.map({input, types: annotation.typeParameters ? annotation.typeParameters.params : [], scope});
         }
         else if (annotation.id.name === 'Function') {
           return checks.function({input}).expression;
@@ -1574,6 +1620,9 @@ export default function ({types: t, template}): Object {
         }
         else if (isTypeChecker(annotation.id, scope)) {
           return `${annotation.id.name} shaped object`;
+        }
+        else if (annotation.typeParameters && annotation.typeParameters.params.length) {
+          return generate(annotation).code;
         }
         else {
           return `an instance of ${getTypeName(annotation.id)}`;
