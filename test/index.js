@@ -12,6 +12,11 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('typeof', {name: 'bob'});
+  failWith('Value of argument "input" violates contract, expected typeof user got Object', 'typeof', {name: false});
+  ok('typeof-class', 'bob');
+  failWith('Function "demo" return value violates contract, expected typeof user got string', 'typeof-class', false);
+
   ok('intersection', {name: 'bob', address: '123 Fake Street'});
   failWith('Value of argument "input" violates contract, expected Nameable & Locatable got Object', 'intersection', {name: 'bob', address: false});
 

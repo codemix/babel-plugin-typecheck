@@ -169,7 +169,7 @@ export default function ({types: t, template}): Object {
         exit (path: NodePath): void {
           const {node, returns, isVoid, type} = stack.pop();
           if (isVoid === false && returns === 0) {
-            throw new SyntaxError(`Function ${node.id ? `"${node.id.name}" ` : ''}did not return a value, expected ${humanReadableType(type, path.scope)}`);
+            throw path.buildCodeFrameError(`Function ${node.id ? `"${node.id.name}" ` : ''}did not return a value, expected ${humanReadableType(type, path.scope)}`);
           }
         }
       },
@@ -187,7 +187,7 @@ export default function ({types: t, template}): Object {
         }
         if (!node.argument) {
           if (maybeNullableAnnotation(returnType) === false) {
-            throw new SyntaxError(`Function ${fn.id ? `"${fn.id.name}" ` : ''}did not return a value, expected ${humanReadableType(returnType, path.scope)}`);
+            throw path.buildCodeFrameError(`Function ${fn.id ? `"${fn.id.name}" ` : ''}did not return a value, expected ${humanReadableType(returnType, path.scope)}`);
           }
           return;
         }
@@ -203,7 +203,7 @@ export default function ({types: t, template}): Object {
           return;
         }
         else if (ok === false) {
-          throw new SyntaxError(`Invalid return type, expected ${humanReadableType(returnType, scope)}`);
+          throw path.buildCodeFrameError(`Invalid return type, expected ${humanReadableType(returnType, scope)}`);
         }
         const check = checkAnnotation(id, returnType, scope);
         if (!check) {
@@ -268,7 +268,7 @@ export default function ({types: t, template}): Object {
             continue;
           }
           else if (ok === false) {
-            throw new SyntaxError(`Invalid assignment value, expected ${humanReadableType(id.typeAnnotation, scope)}`);
+            throw path.buildCodeFrameError(`Invalid assignment value, expected ${humanReadableType(id.typeAnnotation, scope)}`);
           }
           const check = checkAnnotation(id, id.typeAnnotation, scope);
           if (check) {
@@ -322,7 +322,7 @@ export default function ({types: t, template}): Object {
           return;
         }
         else if (ok === false) {
-          throw new SyntaxError(`Invalid assignment value, expected ${humanReadableType(annotation, scope)}`);
+          throw path.buildCodeFrameError(`Invalid assignment value, expected ${humanReadableType(annotation, scope)}`);
         }
         const check = checkAnnotation(id, annotation, scope);
         if (!id.typeAnnotation) {
@@ -381,7 +381,8 @@ export default function ({types: t, template}): Object {
       set: checkSet,
       tuple: checkTuple,
       object: checkObject,
-      nullable: checkNullable
+      nullable: checkNullable,
+      typeof: checkTypeof
     };
   }
 
@@ -753,6 +754,17 @@ export default function ({types: t, template}): Object {
     );
   }
 
+  function checkTypeof ({input, annotation, scope}): ?Node {
+    switch (annotation.type) {
+      case 'GenericTypeAnnotation':
+        const {id} = annotation;
+        const path = {type: id.type, node: id, scope};
+        return checkAnnotation(input, getAnnotation(path), scope);
+      default:
+        return checkAnnotation(input, annotation, scope);
+    }
+  }
+
   function checkUnion ({input, types, scope}): ?Node {
     const checks = types.map(type => checkAnnotation(input, type, scope)).filter(identity);
     return checks.reduce((last, check, index) => {
@@ -978,6 +990,8 @@ export default function ({types: t, template}): Object {
       case 'TypeAnnotation':
       case 'FunctonTypeParam':
         return checkAnnotation(input, annotation.typeAnnotation, scope);
+      case 'TypeofTypeAnnotation':
+        return checks.typeof({input, annotation: annotation.argument, scope});
       case 'GenericTypeAnnotation':
         if (annotation.id.name === 'Array') {
           return checks.array({input, types: annotation.typeParameters ? annotation.typeParameters.params : [], scope});
@@ -1030,9 +1044,6 @@ export default function ({types: t, template}): Object {
         return checks.nullable({input, type: annotation.typeAnnotation, scope}).expression;
       case 'VoidTypeAnnotation':
         return checks.undefined({input}).expression;
-      default:
-        //console.log(annotation);
-        throw new Error('Unknown type: ' + annotation.type);
     }
   }
 
@@ -1292,12 +1303,12 @@ export default function ({types: t, template}): Object {
         }
         else if (typeof value === 'number') {
           if (!objectAnnotation.types[value]) {
-            throw new SyntaxError(`Invalid computed member expression for tuple: ` + humanReadableType(objectAnnotation, path.scope))
+            throw path.buildCodeFrameError(`Invalid computed member expression for tuple: ` + humanReadableType(objectAnnotation, path.scope));
           }
           return objectAnnotation.types[value];
         }
         else {
-          throw new SyntaxError(`Invalid computed member expression for tuple: ` + humanReadableType(objectAnnotation, path.scope));
+          throw path.buildCodeFrameError(`Invalid computed member expression for tuple: ` + humanReadableType(objectAnnotation, path.scope));
         }
         break;
     }
@@ -1870,7 +1881,7 @@ export default function ({types: t, template}): Object {
     const {left: id, right: value} = node;
     const ok = staticCheckAnnotation(path.get('right'), id.typeAnnotation);
     if (ok === false) {
-      throw new SyntaxError(`Invalid default value for argument "${id.name}", expected ${humanReadableType(id.typeAnnotation, scope)}.`);
+      throw path.buildCodeFrameError(`Invalid default value for argument "${id.name}", expected ${humanReadableType(id.typeAnnotation, scope)}.`);
     }
     return createParamGuard(path.get('left'));
   }
@@ -1881,7 +1892,7 @@ export default function ({types: t, template}): Object {
     id.hasBeenTypeChecked = true;
     node.savedTypeAnnotation = node.typeAnnotation;
     if (!isStrictlyArrayAnnotation(node.typeAnnotation)) {
-      throw new SyntaxError(`Invalid type annotation for rest argument "${id.name}", expected an Array, got: ${humanReadableType(node.typeAnnotation, scope)}.`);
+      throw path.buildCodeFrameError(`Invalid type annotation for rest argument "${id.name}", expected an Array, got: ${humanReadableType(node.typeAnnotation, scope)}.`);
     }
     let check = checkAnnotation(id, node.typeAnnotation, scope);
     if (!check) {
