@@ -139,6 +139,7 @@ describe('Typecheck', function () {
 
   ok("export-type", {name: "Bob", age: 45});
   ok("import-type", {name: "Bob", age: 45});
+  ok("import-multiple-types", [{name: "Bob", age: 45}]);
   ok('conditional-expression', 'foo');
 });
 
@@ -153,11 +154,12 @@ function loadInternal (basename) {
     filename: filename,
     presets: [
       "stage-1",
-      "es2015",
-      "react"
+      "es2015"
     ],
     plugins: [
-      typecheck
+      typecheck,
+      'transform-flow-strip-types',
+      //'transform-es2015-instanceof'
     ]
   });
   const context = {

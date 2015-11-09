@@ -88,6 +88,7 @@ export default function ({types: t, template}): Object {
   const stack:Array<{node: Node; returns: number; isVoid: ?boolean; type: ?TypeAnnotation}> = [];
 
   return {
+    inherits: require("babel-plugin-syntax-flow"),
     visitor: {
       TypeAlias (path: NodePath): void {
         path.replaceWith(createTypeAliasChecks(path));
@@ -105,13 +106,34 @@ export default function ({types: t, template}): Object {
       },
 
       ImportDeclaration (path: NodePath): void {
-        const {node, scope} = path;
-        if (node.importKind === 'type') {
-          // @fixme
+        if (path.node.importKind !== 'type') {
+          return;
         }
-        else if (node.importKind === 'typeof') {
-          // @fixme
-        }
+        const [declarators, specifiers] = path.get('specifiers')
+          .map(specifier => {
+            const local = specifier.get('local');
+            const tmpId = path.scope.generateUidIdentifierBasedOnNode(local.node);
+            const replacement = t.importSpecifier(tmpId, specifier.node.imported);
+            const id = t.identifier(local.node.name);
+
+            id.isTypeChecker = true;
+            const declarator = t.variableDeclarator(id, tmpId);
+            declarator.isTypeChecker = true;
+            return [declarator, replacement];
+          })
+          .reduce(([declarators, specifiers], [declarator, specifier]) => {
+            declarators.push(declarator);
+            specifiers.push(specifier);
+            return [declarators, specifiers];
+          }, [[], []]);
+
+        const declaration = t.variableDeclaration('var', declarators);
+        declaration.isTypeChecker = true;
+
+        path.replaceWithMultiple([
+          t.importDeclaration(specifiers, path.node.source),
+          declaration
+        ]);
       },
 
       Function: {
@@ -1562,7 +1584,7 @@ export default function ({types: t, template}): Object {
       return false;
     }
     const {path} = binding;
-    return path != null && (path.type === 'TypeAlias' || (path.type === 'VariableDeclaration' && path.node.isTypeChecker));
+    return path != null && (path.type === 'TypeAlias' || path.type === 'ImportSpecifier' || (path.type === 'VariableDeclaration' && path.node.isTypeChecker));
   }
 
   function isPolymorphicType (id: Identifier|QualifiedTypeIdentifier, scope: Scope): boolean {

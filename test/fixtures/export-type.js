@@ -3,6 +3,8 @@ export type User = {
   age: number
 };
 
+export type UserCollection = Array<User>;
+
 export const wat = 123;
 
 export default function demo (input: User): User {
