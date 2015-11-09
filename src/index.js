@@ -439,7 +439,6 @@ export default function ({types: t, template}): Object {
         if (annotation.type === 'TypeAnnotation' || annotation.type === 'NullableTypeAnnotation') {
           annotation = annotation.typeAnnotation;
         }
-        //console.log('TUPLE!');
         return maybeTupleAnnotation(annotation);
       },
       union: checkStaticUnion,
@@ -1030,7 +1029,7 @@ export default function ({types: t, template}): Object {
       case 'IntersectionTypeAnnotation':
         return checks.intersection({input, types: annotation.types, scope});
       case 'ObjectTypeAnnotation':
-        return checks.object({input, properties: annotation.properties, scope});
+        return checks.object({input, properties: annotation.properties, indexers: annotation.indexers, scope});
       case 'ArrayTypeAnnotation':
         return checks.array({input, types: [annotation.elementType], scope});
       case 'FunctionTypeAnnotation':
@@ -1248,7 +1247,6 @@ export default function ({types: t, template}): Object {
         }
       }).filter(identity)
     );
-    //console.log(generate(annotation).code);
     return annotation;
   }
 
