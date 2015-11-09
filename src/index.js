@@ -523,6 +523,7 @@ export default function ({types: t, template}): Object {
   function compareObjectAnnotation (a: Node, b: Node): ?boolean {
     switch (b.type) {
       case 'TypeAnnotation':
+      case 'FunctonTypeParam':
       case 'NullableTypeAnnotation':
         return compareObjectAnnotation(a, b.typeAnnotation);
       case 'UnionTypeAnnotation':
@@ -544,6 +545,7 @@ export default function ({types: t, template}): Object {
   function compareArrayAnnotation (a: Node, b: Node): ?boolean {
     switch (b.type) {
       case 'TypeAnnotation':
+      case 'FunctonTypeParam':
       case 'NullableTypeAnnotation':
         return compareArrayAnnotation(a, b.typeAnnotation);
       case 'UnionTypeAnnotation':
@@ -565,6 +567,7 @@ export default function ({types: t, template}): Object {
   function compareGenericAnnotation (a: Node, b: Node): ?boolean {
     switch (b.type) {
       case 'TypeAnnotation':
+      case 'FunctonTypeParam':
       case 'NullableTypeAnnotation':
         return compareGenericAnnotation(a, b.typeAnnotation);
       case 'GenericTypeAnnotation':
@@ -593,6 +596,7 @@ export default function ({types: t, template}): Object {
     }
     switch (b.type) {
       case 'TypeAnnotation':
+      case 'FunctonTypeParam':
       case 'NullableTypeAnnotation':
         return compareTupleAnnotation(a, b.typeAnnotation);
       case 'UnionTypeAnnotation':
@@ -626,6 +630,7 @@ export default function ({types: t, template}): Object {
   function compareNullableAnnotation (a: Node, b: Node): ?boolean {
     switch (b.type) {
       case 'TypeAnnotation':
+      case 'FunctonTypeParam':
         return compareNullableAnnotation(a, b.typeAnnotation);
       case 'NullableTypeAnnotation':
       case 'VoidTypeAnnotation':
@@ -899,6 +904,7 @@ export default function ({types: t, template}): Object {
   function checkAnnotation (input: Node, annotation: TypeAnnotation, scope: Scope): ?Node {
     switch (annotation.type) {
       case 'TypeAnnotation':
+      case 'FunctonTypeParam':
         return checkAnnotation(input, annotation.typeAnnotation, scope);
       case 'GenericTypeAnnotation':
         if (annotation.id.name === 'Array') {
@@ -961,6 +967,7 @@ export default function ({types: t, template}): Object {
 
     switch (annotation.type) {
       case 'TypeAnnotation':
+      case 'FunctonTypeParam':
         return staticCheckAnnotation(path, annotation.typeAnnotation);
       case 'GenericTypeAnnotation':
         if (isTypeChecker(annotation.id, path.scope)) {
@@ -1241,6 +1248,7 @@ export default function ({types: t, template}): Object {
   function isStrictlyArrayAnnotation (annotation: TypeAnnotation): boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
+      case 'FunctonTypeParam':
         return isStrictlyArrayAnnotation(annotation.typeAnnotation);
       case 'GenericTypeAnnotation':
         return annotation.id.name === 'Array';
@@ -1258,6 +1266,7 @@ export default function ({types: t, template}): Object {
   function maybeNumberAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
+      case 'FunctonTypeParam':
       case 'NullableTypeAnnotation':
         return maybeNumberAnnotation(annotation.typeAnnotation);
       case 'NumberTypeAnnotation':
@@ -1308,6 +1317,7 @@ export default function ({types: t, template}): Object {
   function maybeStringAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
+      case 'FunctonTypeParam':
       case 'NullableTypeAnnotation':
         return maybeStringAnnotation(annotation.typeAnnotation);
       case 'StringTypeAnnotation':
@@ -1359,6 +1369,7 @@ export default function ({types: t, template}): Object {
   function maybeBooleanAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
+      case 'FunctonTypeParam':
       case 'NullableTypeAnnotation':
         return maybeBooleanAnnotation(annotation.typeAnnotation);
       case 'BooleanTypeAnnotation':
@@ -1410,6 +1421,7 @@ export default function ({types: t, template}): Object {
   function maybeFunctionAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
+      case 'FunctonTypeParam':
       case 'NullableTypeAnnotation':
         return maybeFunctionAnnotation(annotation.typeAnnotation);
       case 'FunctionTypeAnnotation':
@@ -1463,6 +1475,7 @@ export default function ({types: t, template}): Object {
       case 'MixedTypeAnnotation':
         return true;
       case 'TypeAnnotation':
+      case 'FunctonTypeParam':
         return maybeNullableAnnotation(annotation.typeAnnotation);
       case 'GenericTypeAnnotation':
         switch (annotation.id.name) {
@@ -1506,6 +1519,7 @@ export default function ({types: t, template}): Object {
   function maybeInstanceOfAnnotation (annotation: TypeAnnotation, expected: Identifier): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
+      case 'FunctonTypeParam':
       case 'NullableTypeAnnotation':
         return maybeInstanceOfAnnotation(annotation.typeAnnotation);
       case 'GenericTypeAnnotation':
@@ -1553,6 +1567,7 @@ export default function ({types: t, template}): Object {
   function maybeArrayAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
+      case 'FunctonTypeParam':
       case 'NullableTypeAnnotation':
         return maybeArrayAnnotation(annotation.typeAnnotation);
       case 'TupleTypeAnnotation':
@@ -1592,6 +1607,7 @@ export default function ({types: t, template}): Object {
   function maybeTupleAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
+      case 'FunctonTypeParam':
       case 'NullableTypeAnnotation':
         return maybeTupleAnnotation(annotation.typeAnnotation);
       case 'TupleTypeAnnotation':
@@ -1623,53 +1639,15 @@ export default function ({types: t, template}): Object {
     }
   }
 
-  function humanReadableType (annotation: TypeAnnotation, scope: Scope): string {
+  function humanReadableType (annotation: TypeAnnotation): string {
     switch (annotation.type) {
       case 'TypeAnnotation':
-        return humanReadableType(annotation.typeAnnotation, scope);
-      case 'GenericTypeAnnotation':
-        if (annotation.id.name === 'Array') {
-          return humanReadableArray(annotation, scope);
-        }
-        else if (annotation.id.name === 'Function') {
-          return `a function`;
-        }
-        else if (isTypeChecker(annotation.id, scope)) {
-          return `${annotation.id.name} shaped object`;
-        }
-        else if (annotation.typeParameters && annotation.typeParameters.params.length) {
-          return generate(annotation).code;
-        }
-        else {
-          return `an instance of ${getTypeName(annotation.id)}`;
-        }
-      case 'TupleTypeAnnotation':
-        return humanReadableTuple(annotation, scope);
-      case 'NumberTypeAnnotation':
-      case 'NumericLiteralTypeAnnotation':
-        return "a number";
-      case 'BooleanTypeAnnotation':
-      case 'BooleanLiteralTypeAnnotation':
-        return "a boolean";
-      case 'StringTypeAnnotation':
-      case 'StringLiteralTypeAnnotation':
-        return "a string";
-      case 'UnionTypeAnnotation':
-        return joinSentence(annotation.types.map(type => humanReadableType(type, scope)), [', ', 'or']);
-      case 'ObjectTypeAnnotation':
-        return humanReadableObject(annotation, scope);
-      case 'ArrayTypeAnnotation':
-        return generate(annotation).code;
+      case 'FunctonTypeParam':
+        return humanReadableType(annotation.typeAnnotation);
+
       case 'FunctionTypeAnnotation':
-        return 'a function';
-      case 'MixedTypeAnnotation':
-        return "a mixed value";
-      case 'AnyTypeAnnotation':
-        return "any value";
-      case 'NullableTypeAnnotation':
-        return `optional ${humanReadableType(annotation.typeAnnotation, scope)}`;
-      case 'VoidTypeAnnotation':
-        return `void`;
+        // @fixme babel doesn't seem to like generating FunctionTypeAnnotations yet
+        return `(${annotation.params.map(humanReadableType).join(', ')}) => ${humanReadableType(annotation.returnType)}`;
       default:
         return generate(annotation).code;
     }
@@ -1918,25 +1896,6 @@ export default function ({types: t, template}): Object {
     throw this.errorWithNode(`Unsupported type: ${node.type}`);
   }
 
-  /**
-   * Naturally join a list of terms in a sentence.
-   */
-  function joinSentence (terms: Array<string>, joiners: Array<string, string> = [', ', 'and']): string {
-    if (terms.length === 0) {
-      return '';
-    }
-    else if (terms.length === 1) {
-      return terms[0];
-    }
-    else if (terms.length === 2) {
-      return `${terms[0]} ${joiners[1]} ${terms[1]}`;
-    }
-    else {
-      const last = terms.pop();
-      return `${terms.join(joiners[0])} ${joiners[1]} ${last}`;
-    }
-  }
-
 
   /**
    * Union two arrays.
@@ -1950,6 +1909,7 @@ export default function ({types: t, template}): Object {
     }
     return arr1;
   }
+
 
   /**
    * Determine whether the given annotation allows any value.

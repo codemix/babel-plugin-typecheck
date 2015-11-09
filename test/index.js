@@ -54,7 +54,7 @@ describe('Typecheck', function () {
 
   failStatic("bad-conditional-return-value");
 
-  failWith("Function \"demo\" return value violates contract, expected a number or a string got Object", "conditional-return-value", {a: 123});
+  failWith("Function \"demo\" return value violates contract, expected number | string got Object", "conditional-return-value", {a: 123});
 
 
   ok("assignment-expression", [1, 2, 3]);
@@ -66,17 +66,17 @@ describe('Typecheck', function () {
   ok("generic-function", 123);
   ok("fancy-generic-function", Buffer(123), (value) => value);
   ok("return-object-types", {greeting: "hello world", id: 123});
-  failWith("Function \"demo\" return value violates contract, expected an object with shape { greeting: string; id: number; } got Object", "return-object-types", {foo: "bar"});
+  failWith("Function \"demo\" return value violates contract, expected { greeting: string; id: number; } got Object", "return-object-types", {foo: "bar"});
 
   ok("nested-object-types", {greeting: "hello world", id: 123, nested: {left: 10, right: 20}});
-  failWith("Value of argument \"input\" violates contract, expected an object with shape { greeting: string; id: number; nested: { left: number; right: number; }; } got Object", "nested-object-types", {foo: "bar"});
-  failWith("Value of argument \"input\" violates contract, expected an object with shape { greeting: string; id: number; nested: { left: number; right: number; }; } got Object", "nested-object-types", {greeting: "hello world", id: 123, nested: {left: true, right: false}});
-  failWith("Value of argument \"input\" violates contract, expected an object with shape { greeting: string; id: number; nested: { left: number; right: number; }; } got Object", "nested-object-types", {greeting: "hello world", id: 123, nested: {left: 10}});
-  failWith("Value of argument \"input\" violates contract, expected an object with shape { greeting: string; id: number; nested: { left: number; right: number; }; } got Object", "nested-object-types", {greeting: "hello world", id: "123", nested: {left: 10, right: 20}});
+  failWith("Value of argument \"input\" violates contract, expected { greeting: string; id: number; nested: { left: number; right: number; }; } got Object", "nested-object-types", {foo: "bar"});
+  failWith("Value of argument \"input\" violates contract, expected { greeting: string; id: number; nested: { left: number; right: number; }; } got Object", "nested-object-types", {greeting: "hello world", id: 123, nested: {left: true, right: false}});
+  failWith("Value of argument \"input\" violates contract, expected { greeting: string; id: number; nested: { left: number; right: number; }; } got Object", "nested-object-types", {greeting: "hello world", id: 123, nested: {left: 10}});
+  failWith("Value of argument \"input\" violates contract, expected { greeting: string; id: number; nested: { left: number; right: number; }; } got Object", "nested-object-types", {greeting: "hello world", id: "123", nested: {left: 10, right: 20}});
 
   ok("complex-object-types", {greeting: "hello world", id: 123});
-  failWith("Value of argument \"input\" violates contract, expected an object with shape { greeting: string; id: number; } got Object", "complex-object-types", {foo: "bar"});
-  failWith("Value of argument \"input\" violates contract, expected an object with shape { greeting: string; id: number; } got string", "complex-object-types", "foo");
+  failWith("Value of argument \"input\" violates contract, expected { greeting: string; id: number; } got Object", "complex-object-types", {foo: "bar"});
+  failWith("Value of argument \"input\" violates contract, expected { greeting: string; id: number; } got string", "complex-object-types", "foo");
 
   ok("any-return-value");
   ok("callexpr-return-value");
@@ -88,8 +88,8 @@ describe('Typecheck', function () {
   ok("const-tracking-with-new");
   ok("const-tracking-with-new-extended");
 
-  failWith("Value of argument \"input\" violates contract, expected a string got undefined", "string-arguments");
-  failWith("Value of argument \"input\" violates contract, expected a string got number", "string-arguments", 123);
+  failWith("Value of argument \"input\" violates contract, expected string got undefined", "string-arguments");
+  failWith("Value of argument \"input\" violates contract, expected string got number", "string-arguments", 123);
 
   failStatic("bad-const-tracking");
   failStatic("bad-return-value");
@@ -104,8 +104,8 @@ describe('Typecheck', function () {
 
   ok("poly-args", "hello world", /a/);
   ok("poly-args", ["hello world"], /b/);
-  failWith("Value of argument \"arg\" violates contract, expected a string or Array<string> got number", "poly-args", 123);
-  failWith("Value of argument \"fn\" violates contract, expected a function or an instance of RegExp got number", "poly-args", "hello", 123);
+  failWith("Value of argument \"arg\" violates contract, expected string | Array<string> got number", "poly-args", 123);
+  failWith("Value of argument \"fn\" violates contract, expected Function | RegExp got number", "poly-args", "hello", 123);
 
   ok("bug-7-class-support");
   ok("bug-8-class-support");
@@ -113,39 +113,39 @@ describe('Typecheck', function () {
 
   ok("optional-properties", {greeting: "hello world", id: 123});
   ok("optional-properties", {greeting: "hello world"});
-  failWith("Value of argument \"input\" violates contract, expected an object with shape { greeting: string; id?: number; } got Object", "optional-properties", {greeting: "hello world", id: "123"});
-  failWith("Value of argument \"input\" violates contract, expected an object with shape { greeting: string; id?: number; } got Object", "optional-properties", {greeting: "hello world", id: null});
-  failWith("Value of argument \"input\" violates contract, expected an object with shape { greeting: string; id?: number; } got Object", "optional-properties", {id: 123});
-  failWith("Value of argument \"input\" violates contract, expected an object with shape { greeting: string; id?: number; } got Object", "optional-properties", {foo: "bar"});
-  failWith("Value of argument \"input\" violates contract, expected an object with shape { greeting: string; id?: number; } got string", "optional-properties", "foo");
+  failWith("Value of argument \"input\" violates contract, expected { greeting: string; id?: number; } got Object", "optional-properties", {greeting: "hello world", id: "123"});
+  failWith("Value of argument \"input\" violates contract, expected { greeting: string; id?: number; } got Object", "optional-properties", {greeting: "hello world", id: null});
+  failWith("Value of argument \"input\" violates contract, expected { greeting: string; id?: number; } got Object", "optional-properties", {id: 123});
+  failWith("Value of argument \"input\" violates contract, expected { greeting: string; id?: number; } got Object", "optional-properties", {foo: "bar"});
+  failWith("Value of argument \"input\" violates contract, expected { greeting: string; id?: number; } got string", "optional-properties", "foo");
 
   ok("optional-arguments", "hello world");
   ok("optional-arguments", "hello world", 123);
-  failWith("Value of optional argument \"bar\" violates contract, expected a number got string", "optional-arguments", "hello world", "123");
-  failWith("Value of optional argument \"bar\" violates contract, expected a number got null", "optional-arguments", "hello world", null);
+  failWith("Value of optional argument \"bar\" violates contract, expected number got string", "optional-arguments", "hello world", "123");
+  failWith("Value of optional argument \"bar\" violates contract, expected number got null", "optional-arguments", "hello world", null);
 
   ok("default-arguments", "hello world");
   ok("default-arguments", "hello world", 123);
-  failWith("Value of argument \"bar\" violates contract, expected a number got string", "default-arguments", "hello world", "123");
-  failWith("Value of argument \"bar\" violates contract, expected a number got null", "default-arguments", "hello world", null);
+  failWith("Value of argument \"bar\" violates contract, expected number got string", "default-arguments", "hello world", "123");
+  failWith("Value of argument \"bar\" violates contract, expected number got null", "default-arguments", "hello world", null);
 
   ok("qualified-types", {})
-  failWith("Value of argument \"foo\" violates contract, expected an instance of T.Object or an instance of T.Array got string", "qualified-types", "hello")
+  failWith("Value of argument \"foo\" violates contract, expected T.Object | T.Array got string", "qualified-types", "hello")
 
   ok("var-declarations", ["abc", "123"])
   failWith("Value of variable \"a\" violates contract, expected Array got string", "var-declarations", "abc")
-  failWith("Value of variable \"b\" violates contract, expected a string got number", "var-declarations", ["abc", 123])
+  failWith("Value of variable \"b\" violates contract, expected string got number", "var-declarations", ["abc", 123])
 
   ok("var-declarations-2", ["abc", "123"])
   ok("var-declarations-2", ["abc", "1"])
   failWith("Value of variable \"a\" violates contract, expected Array got string", "var-declarations-2", "abc")
-  failWith("Value of variable \"b\" violates contract, expected a string got number", "var-declarations-2", ["abc", 123])
+  failWith("Value of variable \"b\" violates contract, expected string got number", "var-declarations-2", ["abc", 123])
 
   ok("arrow-function", 123);
   ok("arrow-function-2", 123);
 
-  failWith("Value of argument \"arg\" violates contract, expected a number got string", "arrow-function", "abc")
-  failWith("Value of argument \"arg\" violates contract, expected a number got string", "arrow-function-2", "abc")
+  failWith("Value of argument \"arg\" violates contract, expected number got string", "arrow-function", "abc")
+  failWith("Value of argument \"arg\" violates contract, expected number got string", "arrow-function-2", "abc")
 
   ok("bug-30-conditional-return");
 
