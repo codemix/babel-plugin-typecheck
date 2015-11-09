@@ -56,14 +56,9 @@ export default function ({types: t, template}): Object {
   const checkNotNull: (() => Node) = template(`input != null`);
 
   const declareTypeChecker: (() => Node) = template(`
-    const id = (function () {
-      function id (input) {
-        return check;
-      }
-
-      id[Symbol.hasInstance] = id;
-      return id;
-    })();
+    const id = function id (input) {
+      return check;
+    };
   `);
 
   const guard: (() => Node) = template(`
