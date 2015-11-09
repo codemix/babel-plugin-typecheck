@@ -1,4 +1,4 @@
 --reporter=spec
---recursive
 --require should
+--require babel-polyfill
 --require ./test-polyfill.js

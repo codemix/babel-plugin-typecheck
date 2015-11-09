@@ -4,6 +4,8 @@ This is a [Babel](https://babeljs.io/) plugin for static and runtime type checki
 
 [![Build Status](https://travis-ci.org/codemix/babel-plugin-typecheck.svg)](https://travis-ci.org/codemix/babel-plugin-typecheck)
 
+> Note: Now requires babel 6, babel 5 users [see the 2.0 tag](https://github.com/codemix/babel-plugin-typecheck/tree/2.0.0).
+
 # What?
 
 Turns code like this:
@@ -25,8 +27,7 @@ function sendMessage(to, message) {
 }
 ```
 
-And guards against some silly mistakes, for example compiling the following code will raise a `SyntaxError`, because the function
-can return the wrong type.
+And guards against some silly mistakes, for example the following code will fail to compile with a `SyntaxError`, because the function can return the wrong type.
 
 ```js
 function foo (): boolean {
@@ -51,7 +52,7 @@ Here are a few examples of annotations this plugin supports:
 
 ```js
 function foo(
-    aNum: number, 
+    aNum: number,
     anOptionalString: ?string, // will allow null/undefined
     anObject: Object,
     aDate: Date,
@@ -60,7 +61,7 @@ function foo(
     aClass: User,
     aShape: {foo: number, bar: ?string},
     anArray: Array,
-    arrayOf: Array<string>, // inner type is not validated yet, see #10
+    arrayOf: string[] | Array<string>,
     {x, y}: {x: string, y: number}, // destructuring works
     es6Defaults: number = 42
 ) : number {
@@ -98,6 +99,88 @@ function createUser (): User {
 ```
 
 
+## Changes in 3.0.0
+
+### Supports type aliases:
+```js
+type Foo = string|number;
+
+function demo (input: Foo): string {
+  return input + '  world';
+}
+
+demo('hello'); // ok
+demo(123); // ok
+demo(["not", "a", "Foo"]); // fails
+```
+
+### Better static type inference
+```js
+function demo (input: string): string[] {
+  return makeArray(input); // no return type check required, knows that makeArray is compatible
+}
+
+function makeArray (input: string): string[] {
+  return [input];
+}
+```
+
+### Type propagation
+```js
+function demo (input: string): User {
+  const user = new User({name: input});
+  return user; // No check required, knows that user is the correct type
+}
+```
+
+### Assignment tracking
+```js
+let name: string = "bob";
+
+name = "Bob"; // ok
+name = makeString(); // ok
+name = 123; // SyntaxError, expected string not number
+
+function makeString (): string {
+  return "Sally";
+}
+```
+
+### Type casting
+```js
+let name: string = "bob";
+
+name = "Bob";
+((name: number) = 123);
+name = 456;
+name = "fish"; // SyntaxError, expected number;
+```
+
+### Array type parameters
+```js
+function demo (input: string[]): number {
+  return input.length;
+}
+
+demo(["a", "b", "c"]); // ok
+demo([1, 2, 3]); // TypeError
+```
+
+### Shape tracking
+```js
+type User = {
+  name: string;
+  email: string;
+};
+
+function demo (input: User): string {
+  return input.name;
+}
+
+demo({}); // TypeError
+demo({name: 123, email: "test@test.com"}); // TypeError
+demo({name: "test", email: "test@test.com"}); // ok
+```
 
 # Installation
 
