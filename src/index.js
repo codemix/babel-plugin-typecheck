@@ -448,6 +448,8 @@ export default function ({types: t, template}): Object {
         return null;
       case 'ObjectTypeAnnotation':
         return compareObjectAnnotation(a, b);
+      case 'ArrayTypeAnnotation':
+        return compareArrayAnnotation(a, b);
       case 'GenericTypeAnnotation':
         return compareGenericAnnotation(a, b);
       case 'TupleTypeAnnotation':
@@ -499,6 +501,27 @@ export default function ({types: t, template}): Object {
       case 'TypeAnnotation':
       case 'NullableTypeAnnotation':
         return compareObjectAnnotation(a, b.typeAnnotation);
+      case 'UnionTypeAnnotation':
+        return unionComparer(a, b, compareObjectAnnotation);
+      case 'VoidTypeAnnotation':
+      case 'BooleanTypeAnnotation':
+      case 'BooleanLiteralTypeAnnotation':
+      case 'StringTypeAnnotation':
+      case 'StringLiteralTypeAnnotation':
+      case 'NumberTypeAnnotation':
+      case 'NumericLiteralTypeAnnotation':
+      case 'FunctionTypeAnnotation':
+        return false;
+      default:
+        return null;
+    }
+  }
+
+  function compareArrayAnnotation (a: Node, b: Node): ?boolean {
+    switch (b.type) {
+      case 'TypeAnnotation':
+      case 'NullableTypeAnnotation':
+        return compareArrayAnnotation(a, b.typeAnnotation);
       case 'UnionTypeAnnotation':
         return unionComparer(a, b, compareObjectAnnotation);
       case 'VoidTypeAnnotation':
@@ -827,6 +850,8 @@ export default function ({types: t, template}): Object {
         return checks.union({input, types: annotation.types, scope});
       case 'ObjectTypeAnnotation':
         return checks.object({input, properties: annotation.properties, scope});
+      case 'ArrayTypeAnnotation':
+        return checks.array({input, types: [annotation.elementType]});
       case 'FunctionTypeAnnotation':
         return checks.function({input, params: annotation.params, returnType: annotation.returnType});
       case 'MixedTypeAnnotation':
@@ -1443,6 +1468,7 @@ export default function ({types: t, template}): Object {
       case 'NullableTypeAnnotation':
         return maybeArrayAnnotation(annotation.typeAnnotation);
       case 'TupleTypeAnnotation':
+      case 'ArrayTypeAnnotation':
         return true;
       case 'GenericTypeAnnotation':
         return annotation.id.name === 'Array' ? true : null;
@@ -1501,6 +1527,7 @@ export default function ({types: t, template}): Object {
         }
       case 'GenericTypeAnnotation':
       case 'AnyTypeAnnotation':
+      case 'ArrayTypeAnnotation':
       case 'MixedTypeAnnotation':
         return null;
       default:
@@ -1540,6 +1567,8 @@ export default function ({types: t, template}): Object {
         return joinSentence(annotation.types.map(type => humanReadableType(type, scope)), [', ', 'or']);
       case 'ObjectTypeAnnotation':
         return humanReadableObject(annotation, scope);
+      case 'ArrayTypeAnnotation':
+        return generate(annotation).code;
       case 'FunctionTypeAnnotation':
         return 'a function';
       case 'MixedTypeAnnotation':

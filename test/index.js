@@ -12,6 +12,9 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('array-type-annotation', ['foo', 'bar']);
+  failWith('Value of argument "input" violates contract, expected string[] got Array', 'array-type-annotation', ['foo', 123]);
+
   ok('infer-member-expression-from-object', {name: "bob"});
   ok('logical-expression', 'foo');
   ok('logical-or-expression', 'foo');
