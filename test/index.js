@@ -12,6 +12,9 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('set-entries', new Set([1, 2, 3]));
+  failWith('Value of argument "input" violates contract, expected Set<number> got Set', 'set-entries', new Set([1, 'b', 3]));
+
   ok('map-keys', new Map([['a', 1], ['b', 2], ['c', 3]]));
   ok('map-values', new Map([['a', 1], ['b', 2], ['c', 3]]));
 

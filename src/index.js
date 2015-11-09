@@ -95,7 +95,7 @@ export default function ({types: t, template}): Object {
   `);
 
   const checkSetEntries: (() => Node) = template(`
-    input instanceof Set && Array.from(input).every(value => check)
+    input instanceof Set && Array.from(input).every(value => valueCheck)
   `);
 
   const stack: Array<{node: Node; returns: number; isVoid: ?boolean; type: ?TypeAnnotation}> = [];
@@ -377,6 +377,7 @@ export default function ({types: t, template}): Object {
       union: checkUnion,
       array: checkArray,
       map: checkMap,
+      set: checkSet,
       tuple: checkTuple,
       object: checkObject,
       nullable: checkNullable
@@ -729,6 +730,17 @@ export default function ({types: t, template}): Object {
     }
   }
 
+  function checkSet ({input, types, scope}): Node {
+    const [valueType] = types;
+    const value = t.identifier('value');
+    const valueCheck = valueType ? checkAnnotation(value, valueType, scope) : null;
+    if (!valueCheck) {
+      return checkIsSet({input}).expression;
+    }
+    else {
+      return checkSetEntries({input, value, valueCheck}).expression;
+    }
+  }
   function checkArray ({input, types, scope}): Node {
     if (types.length === 0) {
       return checkIsArray({input}).expression;
@@ -892,8 +904,11 @@ export default function ({types: t, template}): Object {
         if (annotation.id.name === 'Array') {
           return checks.array({input, types: annotation.typeParameters ? annotation.typeParameters.params : [], scope});
         }
-        else if (annotation.id.name === 'Map') {
+        else if (annotation.id.name === 'Map' && !scope.hasBinding('Map')) {
           return checks.map({input, types: annotation.typeParameters ? annotation.typeParameters.params : [], scope});
+        }
+        else if (annotation.id.name === 'Set' && !scope.hasBinding('Set')) {
+          return checks.set({input, types: annotation.typeParameters ? annotation.typeParameters.params : [], scope});
         }
         else if (annotation.id.name === 'Function') {
           return checks.function({input}).expression;
