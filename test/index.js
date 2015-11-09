@@ -12,6 +12,10 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('interface', {name: 'hello world'});
+  ok('interface-extends', {name: 'hello world', age: 123});
+  ok('interface-multi-extends', {name: 'hello world', age: 123, isActive: true});
+  ok('class-implements', {name: 'hello world', age: 123, isActive: true});
   ok('class-type-params', 'hello world');
   ok('class-type-params', ['hello world']);
 

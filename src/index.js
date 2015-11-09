@@ -89,6 +89,10 @@ export default function ({types: t, template}): Object {
         path.replaceWith(createTypeAliasChecks(path));
       },
 
+      InterfaceDeclaration (path: NodePath): void {
+        path.replaceWith(createInterfaceChecks(path));
+      },
+
       ExportNamedDeclaration (path: NodePath): void {
         const {node, scope} = path;
         if (node.declaration.type === 'TypeAlias') {
@@ -810,6 +814,28 @@ export default function ({types: t, template}): Object {
     const {id, right: annotation} = node;
     const input = t.identifier('input');
     const check = checkAnnotation(input, annotation, scope) || t.booleanLiteral(true);
+    const declaration = declareTypeChecker({id, check});
+    declaration.isTypeChecker = true;
+    return declaration;
+  }
+
+
+  function createInterfaceChecks (path: NodePath): Node {
+    const {node, scope} = path;
+    const {id, body: annotation} = node;
+    const input = t.identifier('input');
+    const check = node.extends.reduce(
+      (check, extender) => {
+        return t.logicalExpression(
+          '&&',
+          check,
+          checkAnnotation(input, t.genericTypeAnnotation(extender.id), path.scope)
+        );
+        return check;
+      },
+      checkAnnotation(input, annotation, scope) || t.booleanLiteral(true)
+    );
+
     const declaration = declareTypeChecker({id, check});
     declaration.isTypeChecker = true;
     return declaration;
