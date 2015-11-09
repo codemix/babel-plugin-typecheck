@@ -12,6 +12,9 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('class-type-params', 'hello world');
+  ok('class-type-params', ['hello world']);
+
   ok('array-type-annotation', ['foo', 'bar']);
   failWith('Value of argument "input" violates contract, expected string[] got Array', 'array-type-annotation', ['foo', 123]);
 
