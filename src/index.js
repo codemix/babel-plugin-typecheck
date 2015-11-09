@@ -929,6 +929,7 @@ export default function ({types: t, template}): Object {
       case 'MixedTypeAnnotation':
         return checks.mixed({input});
       case 'AnyTypeAnnotation':
+      case 'ExistentialTypeParam':
         return checks.any({input});
       case 'NullableTypeAnnotation':
         return checks.nullable({input, type: annotation.typeAnnotation, scope}).expression;
@@ -1655,7 +1656,7 @@ export default function ({types: t, template}): Object {
       case 'VoidTypeAnnotation':
         return `void`;
       default:
-        throw new Error('Unknown type: ' + annotation.type);
+        return generate(annotation).code;
     }
   }
 
