@@ -12,6 +12,9 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('intersection', {name: 'bob', address: '123 Fake Street'});
+  failWith('Value of argument "input" violates contract, expected Nameable & Locatable got Object', 'intersection', {name: 'bob', address: false});
+
   ok('set-entries', new Set([1, 2, 3]));
   failWith('Value of argument "input" violates contract, expected Set<number> got Set', 'set-entries', new Set([1, 'b', 3]));
 

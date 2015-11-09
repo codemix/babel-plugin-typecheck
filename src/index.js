@@ -375,6 +375,7 @@ export default function ({types: t, template}): Object {
       mixed: () => null,
       any: () => template(`input != null`).expression,
       union: checkUnion,
+      intersection: checkIntersection,
       array: checkArray,
       map: checkMap,
       set: checkSet,
@@ -441,6 +442,7 @@ export default function ({types: t, template}): Object {
         return maybeTupleAnnotation(annotation);
       },
       union: checkStaticUnion,
+      intersection: checkStaticIntersection,
       object: checkStaticObject,
       nullable: checkStaticNullable,
     };
@@ -480,6 +482,8 @@ export default function ({types: t, template}): Object {
         return compareTupleAnnotation(a, b);
       case 'UnionTypeAnnotation':
         return compareUnionAnnotation(a, b);
+      case 'IntersectionTypeAnnotation':
+        return compareIntersectionAnnotation(a, b);
       case 'NullableTypeAnnotation':
         return compareNullableAnnotation(a, b);
       default:
@@ -520,6 +524,29 @@ export default function ({types: t, template}): Object {
     }
   }
 
+  function intersectionComparer (a: TypeAnnotation, b: TypeAnnotation, comparator: (a:TypeAnnotation, b:TypeAnnotation) => ?boolean): ?boolean {
+    let falseCount = 0;
+    let trueCount = 0;
+    if (!a.types) {
+      return null;
+    }
+    for (let type of a.types) {
+      const result = comparator(type, b);
+      if (result === true) {
+        trueCount++;
+      }
+      else if (result === false) {
+        return false;
+      }
+    }
+    if (trueCount === a.types.length) {
+      return true;
+    }
+    else {
+      return null;
+    }
+  }
+
   function compareObjectAnnotation (a: Node, b: Node): ?boolean {
     switch (b.type) {
       case 'TypeAnnotation':
@@ -528,6 +555,8 @@ export default function ({types: t, template}): Object {
         return compareObjectAnnotation(a, b.typeAnnotation);
       case 'UnionTypeAnnotation':
         return unionComparer(a, b, compareObjectAnnotation);
+      case 'IntersectionTypeAnnotation':
+        return intersectionComparer(a, b, compareObjectAnnotation);
       case 'VoidTypeAnnotation':
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
@@ -549,7 +578,9 @@ export default function ({types: t, template}): Object {
       case 'NullableTypeAnnotation':
         return compareArrayAnnotation(a, b.typeAnnotation);
       case 'UnionTypeAnnotation':
-        return unionComparer(a, b, compareObjectAnnotation);
+        return unionComparer(a, b, compareArrayAnnotation);
+      case 'IntersectionTypeAnnotation':
+        return intersectionComparer(a, b, compareArrayAnnotation);
       case 'VoidTypeAnnotation':
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
@@ -579,6 +610,8 @@ export default function ({types: t, template}): Object {
         }
       case 'UnionTypeAnnotation':
         return unionComparer(a, b, compareGenericAnnotation);
+      case 'IntersectionTypeAnnotation':
+        return intersectionComparer(a, b, compareGenericAnnotation);
       default:
         return null;
     }
@@ -601,6 +634,8 @@ export default function ({types: t, template}): Object {
         return compareTupleAnnotation(a, b.typeAnnotation);
       case 'UnionTypeAnnotation':
         return unionComparer(a, b, compareTupleAnnotation);
+      case 'IntersectionTypeAnnotation':
+        return intersectionComparer(a, b, compareTupleAnnotation);
       case 'VoidTypeAnnotation':
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
@@ -672,6 +707,27 @@ export default function ({types: t, template}): Object {
     }
   }
 
+
+  function checkStaticIntersection ({path, types}) {
+    let trueCount = 0;
+    for (let type of types) {
+      const result = staticCheckAnnotation(path, type);
+      if (result === true) {
+        trueCount++;
+      }
+      else if (result === false) {
+        return false;
+      }
+    }
+    if (trueCount === types.length) {
+      return true;
+    }
+    else {
+      return null;
+    }
+  }
+
+
   function checkStaticObject ({path, type}) {
   }
 
@@ -710,6 +766,22 @@ export default function ({types: t, template}): Object {
       );
     }, null);
   }
+
+
+  function checkIntersection ({input, types, scope}): ?Node {
+    const checks = types.map(type => checkAnnotation(input, type, scope)).filter(identity);
+    return checks.reduce((last, check, index) => {
+      if (last == null) {
+        return check;
+      }
+      return t.logicalExpression(
+        "&&",
+        last,
+        check
+      );
+    }, null);
+  }
+
 
   function checkMap ({input, types, scope}): Node {
     const [keyType, valueType] = types;
@@ -941,10 +1013,12 @@ export default function ({types: t, template}): Object {
         return checks.string({input}).expression;
       case 'UnionTypeAnnotation':
         return checks.union({input, types: annotation.types, scope});
+      case 'IntersectionTypeAnnotation':
+        return checks.intersection({input, types: annotation.types, scope});
       case 'ObjectTypeAnnotation':
         return checks.object({input, properties: annotation.properties, scope});
       case 'ArrayTypeAnnotation':
-        return checks.array({input, types: [annotation.elementType]});
+        return checks.array({input, types: [annotation.elementType], scope});
       case 'FunctionTypeAnnotation':
         return checks.function({input, params: annotation.params, returnType: annotation.returnType});
       case 'MixedTypeAnnotation':
@@ -1259,6 +1333,25 @@ export default function ({types: t, template}): Object {
     }
   }
 
+  function compareMaybeUnion (annotation: TypeAnnotation, comparator: (node: TypeAnnotation) => ?boolean): ?boolean {
+    let falseCount = 0;
+    for (let type of annotation.types) {
+      const result = comparator(type);
+      if (result === true) {
+        return true;
+      }
+      else if (result === false) {
+        falseCount++;
+      }
+    }
+    if (falseCount === annotation.types.length) {
+      return false;
+    }
+    else {
+      return null;
+    }
+  }
+
   /**
    * Returns `true` if the annotation is compatible with a number,
    * `false` if it definitely isn't, or `null` if we're not sure.
@@ -1286,24 +1379,10 @@ export default function ({types: t, template}): Object {
             return null;
         }
       case 'UnionTypeAnnotation':
-        let falseCount = 0;
-        for (let type of annotation.types) {
-          const result = maybeNumberAnnotation(type);
-          if (result === true) {
-            return true;
-          }
-          else if (result === false) {
-            falseCount++;
-          }
-        }
-        if (falseCount === annotation.types.length) {
-          return false;
-        }
-        else {
-          return null;
-        }
+        return compareMaybeUnion(annotation, maybeNumberAnnotation);
       case 'AnyTypeAnnotation':
       case 'MixedTypeAnnotation':
+      case 'IntersectionTypeAnnotation':
         return null;
       default:
         return false;
@@ -1355,6 +1434,7 @@ export default function ({types: t, template}): Object {
         }
       case 'AnyTypeAnnotation':
       case 'MixedTypeAnnotation':
+      case 'IntersectionTypeAnnotation':
         return null;
       default:
         return false;
@@ -1407,6 +1487,7 @@ export default function ({types: t, template}): Object {
         }
       case 'AnyTypeAnnotation':
       case 'MixedTypeAnnotation':
+      case 'IntersectionTypeAnnotation':
         return null;
       default:
         return false;
@@ -1458,6 +1539,7 @@ export default function ({types: t, template}): Object {
         }
       case 'AnyTypeAnnotation':
       case 'MixedTypeAnnotation':
+      case 'IntersectionTypeAnnotation':
         return null;
       default:
         return false;
@@ -1594,6 +1676,7 @@ export default function ({types: t, template}): Object {
         }
       case 'AnyTypeAnnotation':
       case 'MixedTypeAnnotation':
+      case 'IntersectionTypeAnnotation':
         return null;
       default:
         return false;
@@ -1633,6 +1716,7 @@ export default function ({types: t, template}): Object {
       case 'AnyTypeAnnotation':
       case 'ArrayTypeAnnotation':
       case 'MixedTypeAnnotation':
+      case 'IntersectionTypeAnnotation':
         return null;
       default:
         return false;
