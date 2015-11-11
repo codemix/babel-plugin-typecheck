@@ -113,7 +113,7 @@ export default function ({types: t, template}): Object {
 
       ExportNamedDeclaration (path: NodePath): void {
         const {node, scope} = path;
-        if (node.declaration.type === 'TypeAlias') {
+        if (node.declaration && node.declaration.type === 'TypeAlias') {
           path.replaceWith(t.exportNamedDeclaration(
             createTypeAliasChecks(path.get('declaration')),
             [],
