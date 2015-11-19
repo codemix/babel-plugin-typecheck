@@ -245,7 +245,8 @@ function failWith (errorMessage, basename, ...args) {
     if (!failed) {
       throw new Error(`Test '${basename}' should have failed but did not.`);
     }
-    if (message !== errorMessage) {
+    // ignore differences in whitespace in comparison.
+    if (message.replace(/\s+/g, ' ') !== errorMessage.replace(/\s+/g, ' ')) {
       throw new Error(`Test '${basename}' failed with ${message} instead of ${errorMessage}.`);
     }
   });
