@@ -4,7 +4,7 @@ This is a [Babel](https://babeljs.io/) plugin for static and runtime type checki
 
 [![Build Status](https://travis-ci.org/codemix/babel-plugin-typecheck.svg)](https://travis-ci.org/codemix/babel-plugin-typecheck)
 
-> Note: Now requires babel 6, babel 5 users [see the 2.0 tag](https://github.com/codemix/babel-plugin-typecheck/tree/2.0.0).
+> Note: Now requires babel 6.1, babel 5 users [see the 2.0 tag](https://github.com/codemix/babel-plugin-typecheck/tree/2.0.0).
 
 # What?
 
