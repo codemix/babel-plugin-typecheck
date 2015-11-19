@@ -38,7 +38,7 @@ export default function ({types: t, template}): Object {
   /**
    * Binary Operators that can only produce boolean results.
    */
-  const BOOLEAN_BINARY_OPERATORS: Array<string> = [
+  const BOOLEAN_BINARY_OPERATORS: string[] = [
     '==',
     '===',
     '>=',
@@ -98,7 +98,7 @@ export default function ({types: t, template}): Object {
     input instanceof Set && Array.from(input).every(value => valueCheck)
   `);
 
-  const stack: Array<{node: Node; returns: number; isVoid: ?boolean; type: ?TypeAnnotation}> = [];
+  const stack: {node: Node; returns: number; isVoid: ?boolean; type: ?TypeAnnotation}[] = [];
 
   return {
     inherits: require("babel-plugin-syntax-flow"),
@@ -176,10 +176,13 @@ export default function ({types: t, template}): Object {
 
       ReturnStatement (path: NodePath): void {
         const {node, parent, scope} = path;
-        if (stack.length === 0 || node.isTypeChecked) {
+        if (stack.length === 0) {
           return;
         }
         stack[stack.length - 1].returns++;
+        if (node.isTypeChecked) {
+          return;
+        }
         const {node: fn} = stack[stack.length - 1];
         const {returnType} = fn;
         if (!returnType) {
@@ -757,7 +760,7 @@ export default function ({types: t, template}): Object {
     switch (annotation.type) {
       case 'GenericTypeAnnotation':
         const {id} = annotation;
-        const path = {type: id.type, node: id, scope};
+        const path = Object.assign({}, input, {type: id.type, node: id, scope});
         return checkAnnotation(input, getAnnotation(path), scope);
       default:
         return checkAnnotation(input, annotation, scope);
@@ -1815,7 +1818,7 @@ export default function ({types: t, template}): Object {
     return null;
   }
 
-  function collectParamChecks (path: NodePath): Array<Node> {
+  function collectParamChecks (path: NodePath): Node[] {
     return path.get('params').map((param) => {
       const {node} = param;
       if (node.type === 'AssignmentPattern') {

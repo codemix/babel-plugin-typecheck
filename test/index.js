@@ -12,6 +12,7 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('bug-48-export-star', 'wat');
   ok('typeof', {name: 'bob'});
   failWith('Value of argument "input" violates contract, expected typeof user got Object', 'typeof', {name: false});
   ok('typeof-class', 'bob');
@@ -244,7 +245,8 @@ function failWith (errorMessage, basename, ...args) {
     if (!failed) {
       throw new Error(`Test '${basename}' should have failed but did not.`);
     }
-    if (message !== errorMessage) {
+    // ignore differences in whitespace in comparison.
+    if (message.replace(/\s+/g, ' ') !== errorMessage.replace(/\s+/g, ' ')) {
       throw new Error(`Test '${basename}' failed with ${message} instead of ${errorMessage}.`);
     }
   });
