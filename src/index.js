@@ -300,11 +300,14 @@ export default function ({types: t, template}): Object {
 
       AssignmentExpression (path: NodePath): void {
         const {node, scope} = path;
-        if (node.hasBeenTypeChecked || node.left.hasBeenTypeChecked) {
+        if (node.hasBeenTypeChecked || node.left.hasBeenTypeChecked || !t.isIdentifier(node.left)) {
           return;
         }
         const binding = scope.getBinding(node.left.name);
-        if (!binding || binding.path.type !== 'VariableDeclarator') {
+        if (!binding) {
+          return;
+        }
+        else if (binding.path.type !== 'VariableDeclarator') {
           return;
         }
         let annotation = path.get('left').getTypeAnnotation();
@@ -504,7 +507,6 @@ export default function ({types: t, template}): Object {
     let falseCount = 0;
     let trueCount = 0;
     if (!a.types) {
-      //console.trace(a.type);
       return null;
     }
     for (let type of a.types) {
@@ -1052,7 +1054,7 @@ export default function ({types: t, template}): Object {
       case 'ExistentialTypeParam':
         return checks.any({input});
       case 'NullableTypeAnnotation':
-        return checks.nullable({input, type: annotation.typeAnnotation, scope}).expression;
+        return checks.nullable({input, type: annotation.typeAnnotation, scope});
       case 'VoidTypeAnnotation':
         return checks.undefined({input}).expression;
     }
@@ -1086,7 +1088,11 @@ export default function ({types: t, template}): Object {
    * Get the type annotation for a given node.
    */
   function getAnnotation (path: NodePath): TypeAnnotation {
-    let annotation = getAnnotationShallow(path);
+    let annotation;
+    try {
+      annotation = getAnnotationShallow(path);
+    }
+    catch (e) {}
     while (annotation && annotation.type === 'TypeAnnotation') {
       annotation = annotation.typeAnnotation;
     }
@@ -1116,13 +1122,6 @@ export default function ({types: t, template}): Object {
           }
           else if (isPolymorphicType(id, scope)) {
             return t.anyTypeAnnotation();
-          }
-          else {
-            const binding = scope.getBinding(node.name);
-            const violation = getConstantViolationsBefore(binding, path).pop();
-            if (violation) {
-              return getAnnotation(violation);
-            }
           }
           return path.getTypeAnnotation();
         case 'NumericLiteral':
@@ -1922,23 +1921,6 @@ export default function ({types: t, template}): Object {
     return guard({
       check,
       message
-    });
-  }
-
-  /**
-   * Get any constant violations before a given node.
-   * @fixme this is a copy of the internal babel api and relies on a private method.
-   */
-  function getConstantViolationsBefore (binding, path, functions) {
-    const violations = binding.constantViolations.slice();
-    violations.unshift(binding.path);
-    return violations.filter(violation => {
-      violation = violation.resolve();
-      const status = violation._guessExecutionStatusRelativeTo(path);
-      if (functions && status === "function") {
-        functions.push(violation);
-      }
-      return status === "before";
     });
   }
 

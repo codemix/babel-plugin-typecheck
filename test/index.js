@@ -12,6 +12,7 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('new', 'bob');
   ok('symbols', Symbol('foo'));
   failWith(`Value of argument "input" violates contract, expected Symbol got string`, 'symbols', 'wat');
   ok('export-typed-var', 'foo');
@@ -171,6 +172,11 @@ describe('Typecheck', function () {
   ok("import-type", {name: "Bob", age: 45});
   ok("import-multiple-types", [{name: "Bob", age: 45}]);
   ok('conditional-expression', 'foo');
+
+  it(`should load itself`, function () {
+    this.timeout(30000); // @fixme We are currently unacceptably slow.
+    load('/../../src/index');
+  });
 });
 
 function load (basename) {
