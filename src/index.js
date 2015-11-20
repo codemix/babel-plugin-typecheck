@@ -397,6 +397,9 @@ export default function ({types: t, template}): Object {
       string (path: NodePath): ?boolean {
         return maybeStringAnnotation(getAnnotation(path));
       },
+      symbol (path: NodePath): ?boolean {
+        return maybeSymbolAnnotation(getAnnotation(path));
+      },
       number (path: NodePath): ?boolean {
         return maybeNumberAnnotation(getAnnotation(path));
       },
@@ -1010,6 +1013,9 @@ export default function ({types: t, template}): Object {
         else if (annotation.id.name === 'Function') {
           return checks.function({input}).expression;
         }
+        else if (annotation.id.name === 'Symbol') {
+          return checks.symbol({input}).expression;
+        }
         else if (isTypeChecker(annotation.id, scope)) {
           return checks.type({input, type: annotation.id}).expression;
         }
@@ -1054,7 +1060,6 @@ export default function ({types: t, template}): Object {
 
   function staticCheckAnnotation (path: NodePath, annotation: TypeAnnotation): ?boolean {
     const other = getAnnotation(path);
-
     switch (annotation.type) {
       case 'TypeAnnotation':
       case 'FunctonTypeParam':
@@ -1065,6 +1070,9 @@ export default function ({types: t, template}): Object {
         }
         else if (isPolymorphicType(annotation.id, path.scope)) {
           return;
+        }
+        else if (annotation.id.name === 'Symbol') {
+          return staticChecks.symbol(path);
         }
         else {
           return staticChecks.instanceof({path, type: createTypeExpression(annotation.id)});
@@ -1124,6 +1132,9 @@ export default function ({types: t, template}): Object {
         case 'CallExpression':
           const callee = path.get('callee');
           if (callee.type === 'Identifier') {
+            if (callee.name === 'Symbol') {
+              return t.genericTypeAnnotation('Symbol');
+            }
             const fn = getFunctionForIdentifier(callee);
             if (fn) {
               return getAnnotation(fn);
@@ -1434,6 +1445,57 @@ export default function ({types: t, template}): Object {
         let falseCount = 0;
         for (let type of annotation.types) {
           const result = maybeStringAnnotation(type);
+          if (result === true) {
+            return true;
+          }
+          else if (result === false) {
+            falseCount++;
+          }
+        }
+        if (falseCount === annotation.types.length) {
+          return false;
+        }
+        else {
+          return null;
+        }
+      case 'AnyTypeAnnotation':
+      case 'MixedTypeAnnotation':
+      case 'IntersectionTypeAnnotation':
+        return null;
+      default:
+        return false;
+    }
+  }
+
+/**
+   * Returns `true` if the annotation is compatible with a symbol,
+   * `false` if it definitely isn't, or `null` if we're not sure.
+   */
+  function maybeSymbolAnnotation (annotation: TypeAnnotation): ?boolean {
+    switch (annotation.type) {
+      case 'TypeAnnotation':
+      case 'FunctonTypeParam':
+      case 'NullableTypeAnnotation':
+        return maybeSymbolAnnotation(annotation.typeAnnotation);
+      case 'GenericTypeAnnotation':
+        switch (annotation.id.name) {
+          case 'Array':
+          case 'Function':
+          case 'Object':
+          case 'Number':
+          case 'Boolean':
+          case 'Date':
+          case 'RegExp':
+            return false;
+          case 'Symbol':
+            return true;
+          default:
+            return null;
+        }
+      case 'UnionTypeAnnotation':
+        let falseCount = 0;
+        for (let type of annotation.types) {
+          const result = maybeSymbolAnnotation(type);
           if (result === true) {
             return true;
           }
