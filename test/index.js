@@ -12,6 +12,7 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('export-typed-var', 'foo');
   ok('bug-48-export-star', 'wat');
   ok('typeof', {name: 'bob'});
   failWith('Value of argument "input" violates contract, expected typeof user got Object', 'typeof', {name: false});

@@ -289,6 +289,9 @@ export default function ({types: t, template}): Object {
           if (path.parent.type === 'Program' || path.parent.type === 'BlockStatement') {
             path.insertAfter(check);
           }
+          else if (path.parent.type === 'ExportNamedDeclaration' || path.parent.type === 'ExportDefaultDeclaration' || path.parent.type === 'ExportAllDeclaration') {
+            path.parentPath.insertAfter(check);
+          }
           else {
             path.replaceWith(t.blockStatement([node, check]));
           }
