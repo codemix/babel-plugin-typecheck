@@ -30,6 +30,7 @@ describe('Typecheck', function () {
 
   ok('map-keys', new Map([['a', 1], ['b', 2], ['c', 3]]));
   ok('map-values', new Map([['a', 1], ['b', 2], ['c', 3]]));
+  failWith(`Function "demo" return value violates contract, expected Map<*, number> got Map`, 'bad-map-values', new Map([['a', 1], ['b', 2], ['c', 3]]));
 
   ok('map-contents', new Map([['a', 1], ['b', 2], ['c', 3]]));
   failWith('Value of argument "input" violates contract, expected Map<string, number> got Map', 'map-contents', new Map([['a', 1], ['b', 2], ['c', 'nope']]));

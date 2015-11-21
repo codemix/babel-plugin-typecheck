@@ -51,11 +51,11 @@ export default function ({types: t, template}): Object {
   const checks: Object = createChecks();
   const staticChecks: Object = createStaticChecks();
 
-  const checkIsArray: (() => Node) = template(`Array.isArray(input)`);
-  const checkIsMap: (() => Node) = template(`input instanceof Map`);
-  const checkIsSet: (() => Node) = template(`input instanceof Set`);
-  const checkIsObject: (() => Node) = template(`input != null && typeof input === 'object'`);
-  const checkNotNull: (() => Node) = template(`input != null`);
+  const checkIsArray: (() => Node) = expression(`Array.isArray(input)`);
+  const checkIsMap: (() => Node) = expression(`input instanceof Map`);
+  const checkIsSet: (() => Node) = expression(`input instanceof Set`);
+  const checkIsObject: (() => Node) = expression(`input != null && typeof input === 'object'`);
+  const checkNotNull: (() => Node) = expression(`input != null`);
 
   const declareTypeChecker: (() => Node) = template(`
     const id = function id (input) {
@@ -78,23 +78,23 @@ export default function ({types: t, template}): Object {
     }
   `);
 
-  const readableName: (() => Node) = template(`
+  const readableName: (() => Node) = expression(`
     input === null ? 'null' : typeof input === 'object' && input.constructor ? input.constructor.name || '[Unknown Object]' : typeof input
   `);
 
-  const checkMapKeys: (() => Node) = template(`
+  const checkMapKeys: (() => Node) = expression(`
     input instanceof Map && Array.from(input.keys()).every(key => keyCheck)
   `);
 
-  const checkMapValues: (() => Node) = template(`
+  const checkMapValues: (() => Node) = expression(`
     input instanceof Map && Array.from(input.values()).every(value => valueCheck)
   `);
 
-  const checkMapEntries: (() => Node) = template(`
+  const checkMapEntries: (() => Node) = expression(`
     input instanceof Map && Array.from(input).every(([key, value]) => keyCheck && valueCheck)
   `);
 
-  const checkSetEntries: (() => Node) = template(`
+  const checkSetEntries: (() => Node) = expression(`
     input instanceof Set && Array.from(input).every(value => valueCheck)
   `);
 
@@ -371,18 +371,18 @@ export default function ({types: t, template}): Object {
 
   function createChecks (): Object {
     return {
-      number: template(`typeof input === 'number'`),
-      boolean: template(`typeof input === 'boolean'`),
-      function: template(`typeof input === 'function'`),
-      string: template(`typeof input === 'string'`),
-      symbol: template(`typeof input === 'symbol'`),
-      undefined: template(`input === undefined`),
-      null: template(`input === null`),
-      nullOrUndefined: template(`input == null`),
-      instanceof: template(`input instanceof type`),
-      type: template(`type(input)`),
+      number: expression(`typeof input === 'number'`),
+      boolean: expression(`typeof input === 'boolean'`),
+      function: expression(`typeof input === 'function'`),
+      string: expression(`typeof input === 'string'`),
+      symbol: expression(`typeof input === 'symbol'`),
+      undefined: expression(`input === undefined`),
+      null: expression(`input === null`),
+      void: expression(`input == null`),
+      instanceof: expression(`input instanceof type`),
+      type: expression(`type(input)`),
       mixed: () => null,
-      any: () => template(`input != null`).expression,
+      any: () => null,
       union: checkUnion,
       intersection: checkIntersection,
       array: checkArray,
@@ -417,8 +417,14 @@ export default function ({types: t, template}): Object {
       },
       instanceof ({path, type}): ?boolean {
         const {node, scope} = path;
-        if (type.name === 'Object' && !scope.hasBinding('Object') && node.type === 'ObjectExpression') {
+        if (type.name === 'Object' && node.type === 'ObjectExpression' && !scope.hasBinding('Object')) {
           return true;
+        }
+        else if (type.name === 'Map' && !scope.hasBinding('Map')) {
+          return null;
+        }
+        else if (type.name === 'Set' && !scope.hasBinding('Set')) {
+          return null;
         }
         return maybeInstanceOfAnnotation(getAnnotation(path), type);
       },
@@ -759,7 +765,7 @@ export default function ({types: t, template}): Object {
     }
     return t.logicalExpression(
       "||",
-      checks.undefined({input}).expression,
+      checks.void({input}),
       check
     );
   }
@@ -813,18 +819,18 @@ export default function ({types: t, template}): Object {
     const valueCheck = valueType ? checkAnnotation(value, valueType, scope) : null;
     if (!keyCheck) {
       if (!valueCheck) {
-        return checkIsMap({input}).expression;
+        return checkIsMap({input});
       }
       else {
-        return checkMapValues({input, value, valueCheck}).expression;
+        return checkMapValues({input, value, valueCheck});
       }
     }
     else {
       if (!valueCheck) {
-        return checkMapKeys({input, key, keyCheck}).expression;
+        return checkMapKeys({input, key, keyCheck});
       }
       else {
-        return checkMapEntries({input, key, value, keyCheck, valueCheck}).expression;
+        return checkMapEntries({input, key, value, keyCheck, valueCheck});
       }
     }
   }
@@ -834,26 +840,27 @@ export default function ({types: t, template}): Object {
     const value = t.identifier('value');
     const valueCheck = valueType ? checkAnnotation(value, valueType, scope) : null;
     if (!valueCheck) {
-      return checkIsSet({input}).expression;
+      return checkIsSet({input});
     }
     else {
-      return checkSetEntries({input, value, valueCheck}).expression;
+      return checkSetEntries({input, value, valueCheck});
     }
   }
+
   function checkArray ({input, types, scope}): Node {
-    if (types.length === 0) {
-      return checkIsArray({input}).expression;
+    if (!types || types.length === 0) {
+      return checkIsArray({input});
     }
     else if (types.length === 1) {
       const item = t.identifier('item');
       const type = types[0];
       const check = checkAnnotation(item, type, scope);
       if (!check) {
-        return checkIsArray({input}).expression;
+        return checkIsArray({input});
       }
       return t.logicalExpression(
         '&&',
-        checkIsArray({input}).expression,
+        checkIsArray({input}),
         t.callExpression(
           t.memberExpression(input, t.identifier('every')),
           [t.functionExpression(null, [item], t.blockStatement([
@@ -893,7 +900,7 @@ export default function ({types: t, template}): Object {
         );
       }, t.logicalExpression(
         '&&',
-        checkIsArray({input}).expression,
+        checkIsArray({input}),
         checkLength
       ));
     }
@@ -901,7 +908,7 @@ export default function ({types: t, template}): Object {
 
   function checkTuple ({input, types, scope}): Node {
     if (types.length === 0) {
-      return checkIsArray({input}).expression;
+      return checkIsArray({input});
     }
 
     // This is a tuple
@@ -934,20 +941,20 @@ export default function ({types: t, template}): Object {
       );
     }, t.logicalExpression(
       '&&',
-      checkIsArray({input}).expression,
+      checkIsArray({input}),
       checkLength
     ));
   }
 
   function checkObject ({input, properties, scope}): Node {
-    return properties.reduce((expr, prop, index) => {
+    const check = properties.reduce((expr, prop, index) => {
       const target = t.memberExpression(input, prop.key);
       let check = checkAnnotation(target, prop.value, scope);
       if (check) {
         if (prop.optional) {
           check = t.logicalExpression(
             '||',
-            checks.undefined({input: target}).expression,
+            checks.undefined({input: target}),
             check
           );
         }
@@ -960,7 +967,9 @@ export default function ({types: t, template}): Object {
       else {
         return expr;
       }
-    }, checkIsObject({input}).expression);
+    }, checkIsObject({input}));
+
+    return check;
   }
 
   function createTypeAliasChecks (path: NodePath): Node {
@@ -1013,31 +1022,31 @@ export default function ({types: t, template}): Object {
           return checks.set({input, types: annotation.typeParameters ? annotation.typeParameters.params : [], scope});
         }
         else if (annotation.id.name === 'Function') {
-          return checks.function({input}).expression;
+          return checks.function({input});
         }
         else if (annotation.id.name === 'Symbol') {
-          return checks.symbol({input}).expression;
+          return checks.symbol({input});
         }
         else if (isTypeChecker(annotation.id, scope)) {
-          return checks.type({input, type: annotation.id}).expression;
+          return checks.type({input, type: annotation.id});
         }
         else if (isPolymorphicType(annotation.id, scope)) {
           return;
         }
         else {
-          return checks.instanceof({input, type: createTypeExpression(annotation.id)}).expression;
+          return checks.instanceof({input, type: createTypeExpression(annotation.id)});
         }
       case 'TupleTypeAnnotation':
         return checks.tuple({input, types: annotation.types, scope});
       case 'NumberTypeAnnotation':
       case 'NumericLiteralTypeAnnotation':
-        return checks.number({input}).expression;
+        return checks.number({input});
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
-        return checks.boolean({input}).expression;
+        return checks.boolean({input});
       case 'StringTypeAnnotation':
       case 'StringLiteralTypeAnnotation':
-        return checks.string({input}).expression;
+        return checks.string({input});
       case 'UnionTypeAnnotation':
         return checks.union({input, types: annotation.types, scope});
       case 'IntersectionTypeAnnotation':
@@ -1045,7 +1054,7 @@ export default function ({types: t, template}): Object {
       case 'ObjectTypeAnnotation':
         return checks.object({input, properties: annotation.properties, indexers: annotation.indexers, scope});
       case 'ArrayTypeAnnotation':
-        return checks.array({input, types: [annotation.elementType], scope});
+        return checks.array({input, types: [annotation.elementType || t.anyTypeAnnotation()], scope});
       case 'FunctionTypeAnnotation':
         return checks.function({input, params: annotation.params, returnType: annotation.returnType});
       case 'MixedTypeAnnotation':
@@ -1056,7 +1065,7 @@ export default function ({types: t, template}): Object {
       case 'NullableTypeAnnotation':
         return checks.nullable({input, type: annotation.typeAnnotation, scope});
       case 'VoidTypeAnnotation':
-        return checks.undefined({input}).expression;
+        return checks.void({input});
     }
   }
 
@@ -1239,7 +1248,7 @@ export default function ({types: t, template}): Object {
   function getArrayExpressionAnnotation (path: NodePath): TypeAnnotation {
     return t.genericTypeAnnotation(
       t.identifier('Array'),
-      path.get('elements').map(getAnnotation)
+      t.typeParameters(path.get('elements').map(getAnnotation))
     );
   }
 
@@ -1913,7 +1922,7 @@ export default function ({types: t, template}): Object {
     if (node.optional) {
       check = t.logicalExpression(
         '||',
-        checks.undefined({input: node}).expression,
+        checks.undefined({input: node}),
         check
       );
     }
@@ -1949,7 +1958,7 @@ export default function ({types: t, template}): Object {
     if (node.optional) {
       check = t.logicalExpression(
         '||',
-        checks.undefined({input: id}).expression,
+        checks.undefined({input: id}),
         check
       );
     }
@@ -1968,7 +1977,7 @@ export default function ({types: t, template}): Object {
     return t.binaryExpression(
       '+',
       t.stringLiteral(message),
-      node.argument ? readableName({input: id || node.argument}).expression : t.stringLiteral('undefined')
+      node.argument ? readableName({input: id || node.argument}) : t.stringLiteral('undefined')
     );
   }
 
@@ -1979,7 +1988,7 @@ export default function ({types: t, template}): Object {
     return t.binaryExpression(
       '+',
       t.stringLiteral(message),
-      readableName({input: node}).expression
+      readableName({input: node})
     );
   }
 
@@ -1989,7 +1998,7 @@ export default function ({types: t, template}): Object {
     return t.binaryExpression(
       '+',
       t.stringLiteral(message),
-      readableName({input: node}).expression
+      readableName({input: node})
     );
   }
 
@@ -2099,5 +2108,17 @@ export default function ({types: t, template}): Object {
    */
   function identity <T> (input: T): T {
     return input;
+  }
+
+  function getExpression (node: Node): Node {
+    return t.isExpressionStatement(node) ? node.expression : node;
+  }
+
+  function expression (input: string): Function {
+    const fn: Function = template(input);
+    return function (...args) {
+      const node: Node = fn(...args);
+      return getExpression(node);
+    };
   }
 }
