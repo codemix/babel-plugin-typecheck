@@ -98,275 +98,280 @@ export default function ({types: t, template}): Object {
     input instanceof Set && Array.from(input).every(value => valueCheck)
   `);
 
-  const stack: {node: Node; returns: number; isVoid: ?boolean; type: ?TypeAnnotation}[] = [];
+  const visitors = {
+    TypeAlias (path: NodePath): void {
+      path.replaceWith(createTypeAliasChecks(path));
+    },
 
-  return {
-    visitor: {
-      TypeAlias (path: NodePath): void {
-        path.replaceWith(createTypeAliasChecks(path));
-      },
+    InterfaceDeclaration (path: NodePath): void {
+      path.replaceWith(createInterfaceChecks(path));
+    },
 
-      InterfaceDeclaration (path: NodePath): void {
-        path.replaceWith(createInterfaceChecks(path));
-      },
+    ExportNamedDeclaration (path: NodePath): void {
+      const {node, scope} = path;
+      if (node.declaration && node.declaration.type === 'TypeAlias') {
+        path.replaceWith(t.exportNamedDeclaration(
+          createTypeAliasChecks(path.get('declaration')),
+          [],
+          null
+        ));
+      }
+    },
 
-      ExportNamedDeclaration (path: NodePath): void {
+    ImportDeclaration (path: NodePath): void {
+      if (path.node.importKind !== 'type') {
+        return;
+      }
+      const [declarators, specifiers] = path.get('specifiers')
+        .map(specifier => {
+          const local = specifier.get('local');
+          const tmpId = path.scope.generateUidIdentifierBasedOnNode(local.node);
+          const replacement = t.importSpecifier(tmpId, specifier.node.imported);
+          const id = t.identifier(local.node.name);
+
+          id.isTypeChecker = true;
+          const declarator = t.variableDeclarator(id, tmpId);
+          declarator.isTypeChecker = true;
+          return [declarator, replacement];
+        })
+        .reduce(([declarators, specifiers], [declarator, specifier]) => {
+          declarators.push(declarator);
+          specifiers.push(specifier);
+          return [declarators, specifiers];
+        }, [[], []]);
+
+      const declaration = t.variableDeclaration('var', declarators);
+      declaration.isTypeChecker = true;
+
+      path.replaceWithMultiple([
+        t.importDeclaration(specifiers, path.node.source),
+        declaration
+      ]);
+    },
+
+    Function: {
+      enter (path: NodePath): void {
         const {node, scope} = path;
-        if (node.declaration && node.declaration.type === 'TypeAlias') {
-          path.replaceWith(t.exportNamedDeclaration(
-            createTypeAliasChecks(path.get('declaration')),
-            [],
-            null
-          ));
+        const paramChecks = collectParamChecks(path);
+        if (node.type === "ArrowFunctionExpression" && node.expression) {
+          node.expression = false;
+          node.body = t.blockStatement([t.returnStatement(node.body)]);
         }
+        node.body.body.unshift(...paramChecks);
+        node.savedTypeAnnotation = node.returnType;
+        node.returnCount = 0;
       },
-
-      ImportDeclaration (path: NodePath): void {
-        if (path.node.importKind !== 'type') {
-          return;
-        }
-        const [declarators, specifiers] = path.get('specifiers')
-          .map(specifier => {
-            const local = specifier.get('local');
-            const tmpId = path.scope.generateUidIdentifierBasedOnNode(local.node);
-            const replacement = t.importSpecifier(tmpId, specifier.node.imported);
-            const id = t.identifier(local.node.name);
-
-            id.isTypeChecker = true;
-            const declarator = t.variableDeclarator(id, tmpId);
-            declarator.isTypeChecker = true;
-            return [declarator, replacement];
-          })
-          .reduce(([declarators, specifiers], [declarator, specifier]) => {
-            declarators.push(declarator);
-            specifiers.push(specifier);
-            return [declarators, specifiers];
-          }, [[], []]);
-
-        const declaration = t.variableDeclaration('var', declarators);
-        declaration.isTypeChecker = true;
-
-        path.replaceWithMultiple([
-          t.importDeclaration(specifiers, path.node.source),
-          declaration
-        ]);
-      },
-
-      Function: {
-        enter (path: NodePath): void {
-          const {node, scope} = path;
-          const paramChecks = collectParamChecks(path);
-          if (node.type === "ArrowFunctionExpression" && node.expression) {
-            node.expression = false;
-            node.body = t.blockStatement([t.returnStatement(node.body)]);
-          }
-          node.body.body.unshift(...paramChecks);
-          const isVoid = node.returnType ? maybeNullableAnnotation(node.returnType) : null;
-          node.savedTypeAnnotation = node.returnType;
-          stack.push({node, returns: 0, isVoid, type: node.returnType});
-        },
-        exit (path: NodePath): void {
-          const {node, returns, isVoid, type} = stack.pop();
-          if (isVoid === false && returns === 0) {
-            throw path.buildCodeFrameError(`Function ${node.id ? `"${node.id.name}" ` : ''}did not return a value, expected ${humanReadableType(type, path.scope)}`);
-          }
-        }
-      },
-
-      ReturnStatement (path: NodePath): void {
-        const {node, parent, scope} = path;
-        if (stack.length === 0) {
-          return;
-        }
-        stack[stack.length - 1].returns++;
-        if (node.isTypeChecked) {
-          return;
-        }
-        const {node: fn} = stack[stack.length - 1];
-        const {returnType} = fn;
-        if (!returnType) {
-          return;
-        }
-        if (!node.argument) {
-          if (maybeNullableAnnotation(returnType) === false) {
-            throw path.buildCodeFrameError(`Function ${fn.id ? `"${fn.id.name}" ` : ''}did not return a value, expected ${humanReadableType(returnType, path.scope)}`);
-          }
-          return;
-        }
-        let id;
-        if (node.argument.type === 'Identifier') {
-          id = node.argument;
-        }
-        else {
-          id = scope.generateUidIdentifierBasedOnNode(node.argument);
-        }
-        const ok = staticCheckAnnotation(path.get("argument"), returnType);
-        if (ok === true) {
-          return;
-        }
-        else if (ok === false) {
-          throw path.buildCodeFrameError(`Invalid return type, expected ${humanReadableType(returnType, scope)}`);
-        }
-        const check = checkAnnotation(id, returnType, scope);
-        if (!check) {
-          return;
-        }
-        if (parent.type !== 'BlockStatement' && parent.type !== 'Program') {
-          const block = [];
-          if (node.argument.type !== 'Identifier') {
-            scope.push({id: id});
-            block.push(t.expressionStatement(
-              t.assignmentExpression(
-                '=',
-                id,
-                node.argument
-              ))
-            );
-          }
-          const ret = t.returnStatement(id);
-          ret.isTypeChecked = true;
-          block.push(thrower({
-            check,
-            ret,
-            message: returnTypeErrorMessage(path, fn, id)
-          }));
-          path.replaceWith(t.blockStatement(block));
-        }
-        else {
-          if (node.argument.type !== 'Identifier') {
-            scope.push({id: id});
-            path.insertBefore(t.expressionStatement(
-              t.assignmentExpression(
-                '=',
-                id,
-                node.argument
-              ))
-            );
-          }
-          const ret = t.returnStatement(id);
-          ret.isTypeChecked = true;
-          path.replaceWith(thrower({
-            check,
-            ret,
-            message: returnTypeErrorMessage(path, fn, id)
-          }));
-        }
-      },
-
-      VariableDeclaration (path: NodePath): void {
+      exit (path: NodePath): void {
         const {node, scope} = path;
-        const collected = [];
-        const declarations = path.get("declarations");
-        for (let i = 0; i < node.declarations.length; i++) {
-          const declaration = node.declarations[i];
-          const {id, init} = declaration;
-          if (!id.typeAnnotation || id.hasBeenTypeChecked) {
-            continue;
-          }
-          id.savedTypeAnnotation = id.typeAnnotation;
-          id.hasBeenTypeChecked = true;
-          const ok = staticCheckAnnotation(declarations[i], id.typeAnnotation);
-          if (ok === true) {
-            continue;
-          }
-          else if (ok === false) {
-            throw path.buildCodeFrameError(`Invalid assignment value, expected ${humanReadableType(id.typeAnnotation, scope)}`);
-          }
-          const check = checkAnnotation(id, id.typeAnnotation, scope);
-          if (check) {
-            collected.push(guard({
-              check,
-              message: varTypeErrorMessage(id, scope)
-            }));
-          }
+        const isVoid = node.savedTypeAnnotation ? maybeNullableAnnotation(node.savedTypeAnnotation) : null;
+        if (!node.returnCount && isVoid === false) {
+          throw path.buildCodeFrameError(`Function ${node.id ? `"${node.id.name}" ` : ''}did not return a value, expected ${humanReadableType(node.savedTypeAnnotation, scope)}`);
         }
-        if (collected.length > 0) {
-          const check = collected.reduce((check, branch) => {
-            branch.alternate = check;
-            return branch;
-          });
-          if (path.parent.type === 'Program' || path.parent.type === 'BlockStatement') {
-            path.insertAfter(check);
-          }
-          else if (path.parent.type === 'ExportNamedDeclaration' || path.parent.type === 'ExportDefaultDeclaration' || path.parent.type === 'ExportAllDeclaration' || path.parentPath.isForXStatement()) {
-            path.parentPath.insertAfter(check);
-          }
-          else {
-            path.replaceWith(t.blockStatement([node, check]));
-          }
-        }
-      },
+      }
+    },
 
-      AssignmentExpression (path: NodePath): void {
-        const {node, scope} = path;
-        if (node.hasBeenTypeChecked || node.left.hasBeenTypeChecked || !t.isIdentifier(node.left)) {
-          return;
+    ReturnStatement (path: NodePath): void {
+      const {node, parent, scope} = path;
+      const fn = path.getFunctionParent();
+      if (!fn) {
+        return;
+      }
+      fn.node.returnCount++;
+      if (node.isTypeChecked) {
+        return;
+      }
+      const {returnType} = fn.node;
+      if (!returnType) {
+        return;
+      }
+      if (!node.argument) {
+        if (maybeNullableAnnotation(returnType) === false) {
+          throw path.buildCodeFrameError(`Function ${fn.node.id ? `"${fn.node.id.name}" ` : ''}did not return a value, expected ${humanReadableType(returnType, path.scope)}`);
         }
-        const binding = scope.getBinding(node.left.name);
-        if (!binding) {
-          return;
+        return;
+      }
+      let id;
+      if (node.argument.type === 'Identifier') {
+        id = node.argument;
+      }
+      else {
+        id = scope.generateUidIdentifierBasedOnNode(node.argument);
+      }
+      const ok = staticCheckAnnotation(path.get("argument"), returnType);
+      if (ok === true) {
+        return;
+      }
+      else if (ok === false) {
+        throw path.buildCodeFrameError(`Invalid return type, expected ${humanReadableType(returnType, scope)}`);
+      }
+      const check = checkAnnotation(id, returnType, scope);
+      if (!check) {
+        return;
+      }
+      if (parent.type !== 'BlockStatement' && parent.type !== 'Program') {
+        const block = [];
+        if (node.argument.type !== 'Identifier') {
+          scope.push({id: id});
+          block.push(t.expressionStatement(
+            t.assignmentExpression(
+              '=',
+              id,
+              node.argument
+            ))
+          );
         }
-        else if (binding.path.type !== 'VariableDeclarator') {
-          return;
+        const ret = t.returnStatement(id);
+        ret.isTypeChecked = true;
+        block.push(thrower({
+          check,
+          ret,
+          message: returnTypeErrorMessage(path, fn.node, id)
+        }));
+        path.replaceWith(t.blockStatement(block));
+      }
+      else {
+        if (node.argument.type !== 'Identifier') {
+          scope.push({id: id});
+          path.insertBefore(t.expressionStatement(
+            t.assignmentExpression(
+              '=',
+              id,
+              node.argument
+            ))
+          );
         }
-        let annotation = path.get('left').getTypeAnnotation();
-        if (annotation.type === 'AnyTypeAnnotation') {
-          const item = binding.path.get('id');
-          annotation = item.node.savedTypeAnnotation || item.getTypeAnnotation();
-        }
+        const ret = t.returnStatement(id);
+        ret.isTypeChecked = true;
+        path.replaceWith(thrower({
+          check,
+          ret,
+          message: returnTypeErrorMessage(path, fn.node, id)
+        }));
+      }
+    },
 
-        node.hasBeenTypeChecked = true;
-        node.left.hasBeenTypeChecked = true;
-        if (annotation.type === 'AnyTypeAnnotation') {
-          annotation = getAnnotation(path.get('right'));
-          if (allowsAny(annotation)) {
-            return;
-          }
+    VariableDeclaration (path: NodePath): void {
+      const {node, scope} = path;
+      const collected = [];
+      const declarations = path.get("declarations");
+      for (let i = 0; i < node.declarations.length; i++) {
+        const declaration = node.declarations[i];
+        const {id, init} = declaration;
+        if (!id.typeAnnotation || id.hasBeenTypeChecked) {
+          continue;
         }
-        const id = node.left;
-        const right = path.get('right');
-        const ok = staticCheckAnnotation(right, annotation);
-        if (ok === true) {
-          return;
-        }
-        else if (ok === false) {
-          throw path.buildCodeFrameError(`Invalid assignment value, expected ${humanReadableType(annotation, scope)}`);
-        }
-        const check = checkAnnotation(id, annotation, scope);
-        if (!id.typeAnnotation) {
-          id.typeAnnotation = annotation;
-        }
+        id.savedTypeAnnotation = id.typeAnnotation;
         id.hasBeenTypeChecked = true;
+        const ok = staticCheckAnnotation(declarations[i], id.typeAnnotation);
+        if (ok === true) {
+          continue;
+        }
+        else if (ok === false) {
+          throw path.buildCodeFrameError(`Invalid assignment value, expected ${humanReadableType(id.typeAnnotation, scope)}`);
+        }
+        const check = checkAnnotation(id, id.typeAnnotation, scope);
         if (check) {
-          path.getStatementParent().insertAfter(guard({
+          collected.push(guard({
             check,
             message: varTypeErrorMessage(id, scope)
           }));
         }
-      },
-
-      TypeCastExpression (path: NodePath): void {
-        const {node} = path;
-        let target;
-        switch (node.expression.type) {
-          case 'Identifier':
-            target = node.expression;
-            break;
-          case 'AssignmentExpression':
-            target = node.expression.left;
-            break;
-          default:
-            // unsupported.
-            return;
+      }
+      if (collected.length > 0) {
+        const check = collected.reduce((check, branch) => {
+          branch.alternate = check;
+          return branch;
+        });
+        if (path.parent.type === 'Program' || path.parent.type === 'BlockStatement') {
+          path.insertAfter(check);
         }
-        const id = path.scope.getBindingIdentifier(target.name);
-        if (!id) {
+        else if (path.parent.type === 'ExportNamedDeclaration' || path.parent.type === 'ExportDefaultDeclaration' || path.parent.type === 'ExportAllDeclaration' || path.parentPath.isForXStatement()) {
+          path.parentPath.insertAfter(check);
+        }
+        else {
+          path.replaceWith(t.blockStatement([node, check]));
+        }
+      }
+    },
+
+    AssignmentExpression (path: NodePath): void {
+      const {node, scope} = path;
+      if (node.hasBeenTypeChecked || node.left.hasBeenTypeChecked || !t.isIdentifier(node.left)) {
+        return;
+      }
+      const binding = scope.getBinding(node.left.name);
+      if (!binding) {
+        return;
+      }
+      else if (binding.path.type !== 'VariableDeclarator') {
+        return;
+      }
+      let annotation = path.get('left').getTypeAnnotation();
+      if (annotation.type === 'AnyTypeAnnotation') {
+        const item = binding.path.get('id');
+        annotation = item.node.savedTypeAnnotation || item.getTypeAnnotation();
+      }
+
+      node.hasBeenTypeChecked = true;
+      node.left.hasBeenTypeChecked = true;
+      if (annotation.type === 'AnyTypeAnnotation') {
+        annotation = getAnnotation(path.get('right'));
+        if (allowsAny(annotation)) {
           return;
         }
-        id.savedTypeAnnotation = path.getTypeAnnotation();
       }
+      const id = node.left;
+      const right = path.get('right');
+      const ok = staticCheckAnnotation(right, annotation);
+      if (ok === true) {
+        return;
+      }
+      else if (ok === false) {
+        throw path.buildCodeFrameError(`Invalid assignment value, expected ${humanReadableType(annotation, scope)}`);
+      }
+      const check = checkAnnotation(id, annotation, scope);
+      if (!id.typeAnnotation) {
+        id.typeAnnotation = annotation;
+      }
+      id.hasBeenTypeChecked = true;
+      if (check) {
+        path.getStatementParent().insertAfter(guard({
+          check,
+          message: varTypeErrorMessage(id, scope)
+        }));
+      }
+    },
+
+    TypeCastExpression (path: NodePath): void {
+      const {node} = path;
+      let target;
+      switch (node.expression.type) {
+        case 'Identifier':
+          target = node.expression;
+          break;
+        case 'AssignmentExpression':
+          target = node.expression.left;
+          break;
+        default:
+          // unsupported.
+          return;
+      }
+      const id = path.scope.getBindingIdentifier(target.name);
+      if (!id) {
+        return;
+      }
+      id.savedTypeAnnotation = path.getTypeAnnotation();
     }
   };
+
+
+  return {
+    visitor: {
+      Program (path: NodePath) {
+        return path.traverse(visitors);
+      }
+    }
+  }
 
   function createChecks (): Object {
     return {
@@ -1865,7 +1870,7 @@ export default function ({types: t, template}): Object {
     let {path} = scope;
     while (path && path.type !== 'Program') {
       const {node} = path;
-      if (t.isFunction(node) && node.typeParameters) {
+      if ((t.isFunction(node) || t.isClass(node)) && node.typeParameters) {
         for (let param of node.typeParameters.params) {
           param.isPolymorphicType = true;
           if (param.name === id.name) {
@@ -1873,7 +1878,7 @@ export default function ({types: t, template}): Object {
           }
         }
       }
-      path = path.parent;
+      path = path.parentPath;
     }
     return false;
   }

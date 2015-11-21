@@ -12,6 +12,7 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('class-getter', 'alice');
   ok("bug-xxx-export");
   ok('new', 'bob');
   ok('symbols', Symbol('foo'));
@@ -191,13 +192,13 @@ function loadInternal (basename) {
   const transformed = transform(source, {
     filename: filename,
     presets: [
-      "stage-1",
-      "es2015"
+      "es2015",
+      "stage-0",
     ],
     plugins: [
       typecheck,
       'transform-flow-strip-types',
-      //'transform-es2015-instanceof'
+      'syntax-class-properties'
     ]
   });
   const context = {
