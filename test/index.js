@@ -12,6 +12,12 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('class-getter', 'alice');
+  ok("bug-xxx-export");
+  ok('new', 'bob');
+  ok('symbols', Symbol('foo'));
+  failWith(`Value of argument "input" violates contract, expected Symbol got string`, 'symbols', 'wat');
+  ok('export-typed-var', 'foo');
   ok('bug-48-export-star', 'wat');
   ok('typeof', {name: 'bob'});
   failWith('Value of argument "input" violates contract, expected typeof user got Object', 'typeof', {name: false});
@@ -26,6 +32,7 @@ describe('Typecheck', function () {
 
   ok('map-keys', new Map([['a', 1], ['b', 2], ['c', 3]]));
   ok('map-values', new Map([['a', 1], ['b', 2], ['c', 3]]));
+  failWith(`Function "demo" return value violates contract, expected Map<*, number> got Map`, 'bad-map-values', new Map([['a', 1], ['b', 2], ['c', 3]]));
 
   ok('map-contents', new Map([['a', 1], ['b', 2], ['c', 3]]));
   failWith('Value of argument "input" violates contract, expected Map<string, number> got Map', 'map-contents', new Map([['a', 1], ['b', 2], ['c', 'nope']]));
@@ -168,6 +175,11 @@ describe('Typecheck', function () {
   ok("import-type", {name: "Bob", age: 45});
   ok("import-multiple-types", [{name: "Bob", age: 45}]);
   ok('conditional-expression', 'foo');
+
+  it(`should load itself`, function () {
+    this.timeout(30000); // @fixme We are currently unacceptably slow.
+    load('/../../src/index');
+  });
 });
 
 function load (basename) {
@@ -180,13 +192,13 @@ function loadInternal (basename) {
   const transformed = transform(source, {
     filename: filename,
     presets: [
-      "stage-1",
-      "es2015"
+      "es2015",
+      "stage-0",
     ],
     plugins: [
       typecheck,
       'transform-flow-strip-types',
-      //'transform-es2015-instanceof'
+      'syntax-class-properties'
     ]
   });
   const context = {

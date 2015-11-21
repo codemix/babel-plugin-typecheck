@@ -1,11 +1,11 @@
 {
   "name": "babel-plugin-typecheck",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "description": "Transforms flow type annotations into runtime type checks.",
   "main": "lib/index.js",
   "scripts": {
-    "build": "babel -d ./lib ./src",
-    "build-typed": "npm run build && babel --plugins ./lib -d ./lib-checked ./src",
+    "build": "babel --plugins syntax-flow,transform-flow-strip-types -d ./lib ./src",
+    "build-typed": "npm run build && babel --plugins ./lib,syntax-flow,transform-flow-strip-types -d ./lib-checked ./src",
     "prepublish": "npm run build",
     "pretest": "npm run build",
     "test": "mocha ./test/index.js",
@@ -34,9 +34,11 @@
   "devDependencies": {
     "babel-cli": "^6.1.0",
     "babel-core": "^6.1.0",
+    "babel-plugin-syntax-class-properties": "^6.1.18",
     "babel-polyfill": "^6.0.16",
     "babel-preset-es2015": "^6.1.0",
     "babel-preset-react": "^6.1.0",
+    "babel-preset-stage-0": "^6.1.18",
     "babel-preset-stage-1": "^6.1.0",
     "mocha": "~2.2.4",
     "should": "^6.0.1"
@@ -44,7 +46,6 @@
   "dependencies": {
     "babel-generator": "^6.1.2",
     "babel-plugin-syntax-flow": "^6.0.14",
-    "babel-plugin-transform-es2015-instanceof": "^6.1.2",
     "babel-plugin-transform-es2015-modules-commonjs": "^6.1.3",
     "babel-plugin-transform-flow-strip-types": "^6.0.14"
   }

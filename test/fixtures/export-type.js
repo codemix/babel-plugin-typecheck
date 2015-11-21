@@ -3,7 +3,7 @@ export type User = {
   age: number
 };
 
-export type UserCollection = Array<User>;
+export type UserCollection = User[];
 
 export const wat = 123;
 

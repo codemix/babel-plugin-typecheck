@@ -51,11 +51,11 @@ export default function ({types: t, template}): Object {
   const checks: Object = createChecks();
   const staticChecks: Object = createStaticChecks();
 
-  const checkIsArray: (() => Node) = template(`Array.isArray(input)`);
-  const checkIsMap: (() => Node) = template(`input instanceof Map`);
-  const checkIsSet: (() => Node) = template(`input instanceof Set`);
-  const checkIsObject: (() => Node) = template(`input != null && typeof input === 'object'`);
-  const checkNotNull: (() => Node) = template(`input != null`);
+  const checkIsArray: (() => Node) = expression(`Array.isArray(input)`);
+  const checkIsMap: (() => Node) = expression(`input instanceof Map`);
+  const checkIsSet: (() => Node) = expression(`input instanceof Set`);
+  const checkIsObject: (() => Node) = expression(`input != null && typeof input === 'object'`);
+  const checkNotNull: (() => Node) = expression(`input != null`);
 
   const declareTypeChecker: (() => Node) = template(`
     const id = function id (input) {
@@ -78,305 +78,315 @@ export default function ({types: t, template}): Object {
     }
   `);
 
-  const readableName: (() => Node) = template(`
+  const readableName: (() => Node) = expression(`
     input === null ? 'null' : typeof input === 'object' && input.constructor ? input.constructor.name || '[Unknown Object]' : typeof input
   `);
 
-  const checkMapKeys: (() => Node) = template(`
+  const checkMapKeys: (() => Node) = expression(`
     input instanceof Map && Array.from(input.keys()).every(key => keyCheck)
   `);
 
-  const checkMapValues: (() => Node) = template(`
+  const checkMapValues: (() => Node) = expression(`
     input instanceof Map && Array.from(input.values()).every(value => valueCheck)
   `);
 
-  const checkMapEntries: (() => Node) = template(`
+  const checkMapEntries: (() => Node) = expression(`
     input instanceof Map && Array.from(input).every(([key, value]) => keyCheck && valueCheck)
   `);
 
-  const checkSetEntries: (() => Node) = template(`
+  const checkSetEntries: (() => Node) = expression(`
     input instanceof Set && Array.from(input).every(value => valueCheck)
   `);
 
-  const stack: {node: Node; returns: number; isVoid: ?boolean; type: ?TypeAnnotation}[] = [];
+  const visitors = {
+    TypeAlias (path: NodePath): void {
+      path.replaceWith(createTypeAliasChecks(path));
+    },
 
-  return {
-    inherits: require("babel-plugin-syntax-flow"),
-    visitor: {
-      TypeAlias (path: NodePath): void {
-        path.replaceWith(createTypeAliasChecks(path));
-      },
+    InterfaceDeclaration (path: NodePath): void {
+      path.replaceWith(createInterfaceChecks(path));
+    },
 
-      InterfaceDeclaration (path: NodePath): void {
-        path.replaceWith(createInterfaceChecks(path));
-      },
+    ExportNamedDeclaration (path: NodePath): void {
+      const {node, scope} = path;
+      if (node.declaration && node.declaration.type === 'TypeAlias') {
+        path.replaceWith(t.exportNamedDeclaration(
+          createTypeAliasChecks(path.get('declaration')),
+          [],
+          null
+        ));
+      }
+    },
 
-      ExportNamedDeclaration (path: NodePath): void {
+    ImportDeclaration (path: NodePath): void {
+      if (path.node.importKind !== 'type') {
+        return;
+      }
+      const [declarators, specifiers] = path.get('specifiers')
+        .map(specifier => {
+          const local = specifier.get('local');
+          const tmpId = path.scope.generateUidIdentifierBasedOnNode(local.node);
+          const replacement = t.importSpecifier(tmpId, specifier.node.imported);
+          const id = t.identifier(local.node.name);
+
+          id.isTypeChecker = true;
+          const declarator = t.variableDeclarator(id, tmpId);
+          declarator.isTypeChecker = true;
+          return [declarator, replacement];
+        })
+        .reduce(([declarators, specifiers], [declarator, specifier]) => {
+          declarators.push(declarator);
+          specifiers.push(specifier);
+          return [declarators, specifiers];
+        }, [[], []]);
+
+      const declaration = t.variableDeclaration('var', declarators);
+      declaration.isTypeChecker = true;
+
+      path.replaceWithMultiple([
+        t.importDeclaration(specifiers, path.node.source),
+        declaration
+      ]);
+    },
+
+    Function: {
+      enter (path: NodePath): void {
         const {node, scope} = path;
-        if (node.declaration && node.declaration.type === 'TypeAlias') {
-          path.replaceWith(t.exportNamedDeclaration(
-            createTypeAliasChecks(path.get('declaration')),
-            [],
-            null
-          ));
+        const paramChecks = collectParamChecks(path);
+        if (node.type === "ArrowFunctionExpression" && node.expression) {
+          node.expression = false;
+          node.body = t.blockStatement([t.returnStatement(node.body)]);
         }
+        node.body.body.unshift(...paramChecks);
+        node.savedTypeAnnotation = node.returnType;
+        node.returnCount = 0;
       },
-
-      ImportDeclaration (path: NodePath): void {
-        if (path.node.importKind !== 'type') {
-          return;
-        }
-        const [declarators, specifiers] = path.get('specifiers')
-          .map(specifier => {
-            const local = specifier.get('local');
-            const tmpId = path.scope.generateUidIdentifierBasedOnNode(local.node);
-            const replacement = t.importSpecifier(tmpId, specifier.node.imported);
-            const id = t.identifier(local.node.name);
-
-            id.isTypeChecker = true;
-            const declarator = t.variableDeclarator(id, tmpId);
-            declarator.isTypeChecker = true;
-            return [declarator, replacement];
-          })
-          .reduce(([declarators, specifiers], [declarator, specifier]) => {
-            declarators.push(declarator);
-            specifiers.push(specifier);
-            return [declarators, specifiers];
-          }, [[], []]);
-
-        const declaration = t.variableDeclaration('var', declarators);
-        declaration.isTypeChecker = true;
-
-        path.replaceWithMultiple([
-          t.importDeclaration(specifiers, path.node.source),
-          declaration
-        ]);
-      },
-
-      Function: {
-        enter (path: NodePath): void {
-          const {node, scope} = path;
-          const paramChecks = collectParamChecks(path);
-          if (node.type === "ArrowFunctionExpression" && node.expression) {
-            node.expression = false;
-            node.body = t.blockStatement([t.returnStatement(node.body)]);
-          }
-          node.body.body.unshift(...paramChecks);
-          const isVoid = node.returnType ? maybeNullableAnnotation(node.returnType) : null;
-          node.savedTypeAnnotation = node.returnType;
-          stack.push({node, returns: 0, isVoid, type: node.returnType});
-        },
-        exit (path: NodePath): void {
-          const {node, returns, isVoid, type} = stack.pop();
-          if (isVoid === false && returns === 0) {
-            throw path.buildCodeFrameError(`Function ${node.id ? `"${node.id.name}" ` : ''}did not return a value, expected ${humanReadableType(type, path.scope)}`);
-          }
-        }
-      },
-
-      ReturnStatement (path: NodePath): void {
-        const {node, parent, scope} = path;
-        if (stack.length === 0) {
-          return;
-        }
-        stack[stack.length - 1].returns++;
-        if (node.isTypeChecked) {
-          return;
-        }
-        const {node: fn} = stack[stack.length - 1];
-        const {returnType} = fn;
-        if (!returnType) {
-          return;
-        }
-        if (!node.argument) {
-          if (maybeNullableAnnotation(returnType) === false) {
-            throw path.buildCodeFrameError(`Function ${fn.id ? `"${fn.id.name}" ` : ''}did not return a value, expected ${humanReadableType(returnType, path.scope)}`);
-          }
-          return;
-        }
-        let id;
-        if (node.argument.type === 'Identifier') {
-          id = node.argument;
-        }
-        else {
-          id = scope.generateUidIdentifierBasedOnNode(node.argument);
-        }
-        const ok = staticCheckAnnotation(path.get("argument"), returnType);
-        if (ok === true) {
-          return;
-        }
-        else if (ok === false) {
-          throw path.buildCodeFrameError(`Invalid return type, expected ${humanReadableType(returnType, scope)}`);
-        }
-        const check = checkAnnotation(id, returnType, scope);
-        if (!check) {
-          return;
-        }
-        if (parent.type !== 'BlockStatement' && parent.type !== 'Program') {
-          const block = [];
-          if (node.argument.type !== 'Identifier') {
-            scope.push({id: id});
-            block.push(t.expressionStatement(
-              t.assignmentExpression(
-                '=',
-                id,
-                node.argument
-              ))
-            );
-          }
-          const ret = t.returnStatement(id);
-          ret.isTypeChecked = true;
-          block.push(thrower({
-            check,
-            ret,
-            message: returnTypeErrorMessage(path, fn, id)
-          }));
-          path.replaceWith(t.blockStatement(block));
-        }
-        else {
-          if (node.argument.type !== 'Identifier') {
-            scope.push({id: id});
-            path.insertBefore(t.expressionStatement(
-              t.assignmentExpression(
-                '=',
-                id,
-                node.argument
-              ))
-            );
-          }
-          const ret = t.returnStatement(id);
-          ret.isTypeChecked = true;
-          path.replaceWith(thrower({
-            check,
-            ret,
-            message: returnTypeErrorMessage(path, fn, id)
-          }));
-        }
-      },
-
-      VariableDeclaration (path: NodePath): void {
+      exit (path: NodePath): void {
         const {node, scope} = path;
-        const collected = [];
-        const declarations = path.get("declarations");
-        for (let i = 0; i < node.declarations.length; i++) {
-          const declaration = node.declarations[i];
-          const {id, init} = declaration;
-          if (!id.typeAnnotation || id.hasBeenTypeChecked) {
-            continue;
-          }
-          id.savedTypeAnnotation = id.typeAnnotation;
-          id.hasBeenTypeChecked = true;
-          const ok = staticCheckAnnotation(declarations[i], id.typeAnnotation);
-          if (ok === true) {
-            continue;
-          }
-          else if (ok === false) {
-            throw path.buildCodeFrameError(`Invalid assignment value, expected ${humanReadableType(id.typeAnnotation, scope)}`);
-          }
-          const check = checkAnnotation(id, id.typeAnnotation, scope);
-          if (check) {
-            collected.push(guard({
-              check,
-              message: varTypeErrorMessage(id, scope)
-            }));
-          }
+        const isVoid = node.savedTypeAnnotation ? maybeNullableAnnotation(node.savedTypeAnnotation) : null;
+        if (!node.returnCount && isVoid === false) {
+          throw path.buildCodeFrameError(`Function ${node.id ? `"${node.id.name}" ` : ''}did not return a value, expected ${humanReadableType(node.savedTypeAnnotation, scope)}`);
         }
-        if (collected.length > 0) {
-          const check = collected.reduce((check, branch) => {
-            branch.alternate = check;
-            return branch;
-          });
-          if (path.parent.type === 'Program' || path.parent.type === 'BlockStatement') {
-            path.insertAfter(check);
-          }
-          else {
-            path.replaceWith(t.blockStatement([node, check]));
-          }
-        }
-      },
+      }
+    },
 
-      AssignmentExpression (path: NodePath): void {
-        const {node, scope} = path;
-        if (node.hasBeenTypeChecked || node.left.hasBeenTypeChecked) {
-          return;
+    ReturnStatement (path: NodePath): void {
+      const {node, parent, scope} = path;
+      const fn = path.getFunctionParent();
+      if (!fn) {
+        return;
+      }
+      fn.node.returnCount++;
+      if (node.isTypeChecked) {
+        return;
+      }
+      const {returnType} = fn.node;
+      if (!returnType) {
+        return;
+      }
+      if (!node.argument) {
+        if (maybeNullableAnnotation(returnType) === false) {
+          throw path.buildCodeFrameError(`Function ${fn.node.id ? `"${fn.node.id.name}" ` : ''}did not return a value, expected ${humanReadableType(returnType, path.scope)}`);
         }
-        const binding = scope.getBinding(node.left.name);
-        if (!binding || binding.path.type !== 'VariableDeclarator') {
-          return;
+        return;
+      }
+      let id;
+      if (node.argument.type === 'Identifier') {
+        id = node.argument;
+      }
+      else {
+        id = scope.generateUidIdentifierBasedOnNode(node.argument);
+      }
+      const ok = staticCheckAnnotation(path.get("argument"), returnType);
+      if (ok === true) {
+        return;
+      }
+      else if (ok === false) {
+        throw path.buildCodeFrameError(`Invalid return type, expected ${humanReadableType(returnType, scope)}`);
+      }
+      const check = checkAnnotation(id, returnType, scope);
+      if (!check) {
+        return;
+      }
+      if (parent.type !== 'BlockStatement' && parent.type !== 'Program') {
+        const block = [];
+        if (node.argument.type !== 'Identifier') {
+          scope.push({id: id});
+          block.push(t.expressionStatement(
+            t.assignmentExpression(
+              '=',
+              id,
+              node.argument
+            ))
+          );
         }
-        let annotation = path.get('left').getTypeAnnotation();
-        if (annotation.type === 'AnyTypeAnnotation') {
-          const item = binding.path.get('id');
-          annotation = item.node.savedTypeAnnotation || item.getTypeAnnotation();
+        const ret = t.returnStatement(id);
+        ret.isTypeChecked = true;
+        block.push(thrower({
+          check,
+          ret,
+          message: returnTypeErrorMessage(path, fn.node, id)
+        }));
+        path.replaceWith(t.blockStatement(block));
+      }
+      else {
+        if (node.argument.type !== 'Identifier') {
+          scope.push({id: id});
+          path.insertBefore(t.expressionStatement(
+            t.assignmentExpression(
+              '=',
+              id,
+              node.argument
+            ))
+          );
         }
+        const ret = t.returnStatement(id);
+        ret.isTypeChecked = true;
+        path.replaceWith(thrower({
+          check,
+          ret,
+          message: returnTypeErrorMessage(path, fn.node, id)
+        }));
+      }
+    },
 
-        node.hasBeenTypeChecked = true;
-        node.left.hasBeenTypeChecked = true;
-        if (annotation.type === 'AnyTypeAnnotation') {
-          annotation = getAnnotation(path.get('right'));
-          if (allowsAny(annotation)) {
-            return;
-          }
+    VariableDeclaration (path: NodePath): void {
+      const {node, scope} = path;
+      const collected = [];
+      const declarations = path.get("declarations");
+      for (let i = 0; i < node.declarations.length; i++) {
+        const declaration = node.declarations[i];
+        const {id, init} = declaration;
+        if (!id.typeAnnotation || id.hasBeenTypeChecked) {
+          continue;
         }
-        const id = node.left;
-        const right = path.get('right');
-        const ok = staticCheckAnnotation(right, annotation);
-        if (ok === true) {
-          return;
-        }
-        else if (ok === false) {
-          throw path.buildCodeFrameError(`Invalid assignment value, expected ${humanReadableType(annotation, scope)}`);
-        }
-        const check = checkAnnotation(id, annotation, scope);
-        if (!id.typeAnnotation) {
-          id.typeAnnotation = annotation;
-        }
+        id.savedTypeAnnotation = id.typeAnnotation;
         id.hasBeenTypeChecked = true;
+        const ok = staticCheckAnnotation(declarations[i], id.typeAnnotation);
+        if (ok === true) {
+          continue;
+        }
+        else if (ok === false) {
+          throw path.buildCodeFrameError(`Invalid assignment value, expected ${humanReadableType(id.typeAnnotation, scope)}`);
+        }
+        const check = checkAnnotation(id, id.typeAnnotation, scope);
         if (check) {
-          path.getStatementParent().insertAfter(guard({
+          collected.push(guard({
             check,
             message: varTypeErrorMessage(id, scope)
           }));
         }
-      },
-
-      TypeCastExpression (path: NodePath): void {
-        const {node} = path;
-        let target;
-        switch (node.expression.type) {
-          case 'Identifier':
-            target = node.expression;
-            break;
-          case 'AssignmentExpression':
-            target = node.expression.left;
-            break;
-          default:
-            // unsupported.
-            return;
+      }
+      if (collected.length > 0) {
+        const check = collected.reduce((check, branch) => {
+          branch.alternate = check;
+          return branch;
+        });
+        if (path.parent.type === 'Program' || path.parent.type === 'BlockStatement') {
+          path.insertAfter(check);
         }
-        const id = path.scope.getBindingIdentifier(target.name);
-        if (!id) {
+        else if (path.parent.type === 'ExportNamedDeclaration' || path.parent.type === 'ExportDefaultDeclaration' || path.parent.type === 'ExportAllDeclaration' || path.parentPath.isForXStatement()) {
+          path.parentPath.insertAfter(check);
+        }
+        else {
+          path.replaceWith(t.blockStatement([node, check]));
+        }
+      }
+    },
+
+    AssignmentExpression (path: NodePath): void {
+      const {node, scope} = path;
+      if (node.hasBeenTypeChecked || node.left.hasBeenTypeChecked || !t.isIdentifier(node.left)) {
+        return;
+      }
+      const binding = scope.getBinding(node.left.name);
+      if (!binding) {
+        return;
+      }
+      else if (binding.path.type !== 'VariableDeclarator') {
+        return;
+      }
+      let annotation = path.get('left').getTypeAnnotation();
+      if (annotation.type === 'AnyTypeAnnotation') {
+        const item = binding.path.get('id');
+        annotation = item.node.savedTypeAnnotation || item.getTypeAnnotation();
+      }
+
+      node.hasBeenTypeChecked = true;
+      node.left.hasBeenTypeChecked = true;
+      if (annotation.type === 'AnyTypeAnnotation') {
+        annotation = getAnnotation(path.get('right'));
+        if (allowsAny(annotation)) {
           return;
         }
-        id.savedTypeAnnotation = path.getTypeAnnotation();
       }
+      const id = node.left;
+      const right = path.get('right');
+      const ok = staticCheckAnnotation(right, annotation);
+      if (ok === true) {
+        return;
+      }
+      else if (ok === false) {
+        throw path.buildCodeFrameError(`Invalid assignment value, expected ${humanReadableType(annotation, scope)}`);
+      }
+      const check = checkAnnotation(id, annotation, scope);
+      if (!id.typeAnnotation) {
+        id.typeAnnotation = annotation;
+      }
+      id.hasBeenTypeChecked = true;
+      if (check) {
+        path.getStatementParent().insertAfter(guard({
+          check,
+          message: varTypeErrorMessage(id, scope)
+        }));
+      }
+    },
+
+    TypeCastExpression (path: NodePath): void {
+      const {node} = path;
+      let target;
+      switch (node.expression.type) {
+        case 'Identifier':
+          target = node.expression;
+          break;
+        case 'AssignmentExpression':
+          target = node.expression.left;
+          break;
+        default:
+          // unsupported.
+          return;
+      }
+      const id = path.scope.getBindingIdentifier(target.name);
+      if (!id) {
+        return;
+      }
+      id.savedTypeAnnotation = path.getTypeAnnotation();
     }
   };
 
+
+  return {
+    visitor: {
+      Program (path: NodePath) {
+        return path.traverse(visitors);
+      }
+    }
+  }
+
   function createChecks (): Object {
     return {
-      number: template(`typeof input === 'number'`),
-      boolean: template(`typeof input === 'boolean'`),
-      function: template(`typeof input === 'function'`),
-      string: template(`typeof input === 'string'`),
-      symbol: template(`typeof input === 'symbol'`),
-      undefined: template(`input === undefined`),
-      null: template(`input === null`),
-      nullOrUndefined: template(`input == null`),
-      instanceof: template(`input instanceof type`),
-      type: template(`type(input)`),
+      number: expression(`typeof input === 'number'`),
+      boolean: expression(`typeof input === 'boolean'`),
+      function: expression(`typeof input === 'function'`),
+      string: expression(`typeof input === 'string'`),
+      symbol: expression(`typeof input === 'symbol'`),
+      undefined: expression(`input === undefined`),
+      null: expression(`input === null`),
+      void: expression(`input == null`),
+      instanceof: expression(`input instanceof type`),
+      type: expression(`type(input)`),
       mixed: () => null,
-      any: () => template(`input != null`).expression,
+      any: () => null,
       union: checkUnion,
       intersection: checkIntersection,
       array: checkArray,
@@ -394,6 +404,9 @@ export default function ({types: t, template}): Object {
       string (path: NodePath): ?boolean {
         return maybeStringAnnotation(getAnnotation(path));
       },
+      symbol (path: NodePath): ?boolean {
+        return maybeSymbolAnnotation(getAnnotation(path));
+      },
       number (path: NodePath): ?boolean {
         return maybeNumberAnnotation(getAnnotation(path));
       },
@@ -408,8 +421,14 @@ export default function ({types: t, template}): Object {
       },
       instanceof ({path, type}): ?boolean {
         const {node, scope} = path;
-        if (type.name === 'Object' && !scope.hasBinding('Object') && node.type === 'ObjectExpression') {
+        if (type.name === 'Object' && node.type === 'ObjectExpression' && !scope.hasBinding('Object')) {
           return true;
+        }
+        else if (type.name === 'Map' && !scope.hasBinding('Map')) {
+          return null;
+        }
+        else if (type.name === 'Set' && !scope.hasBinding('Set')) {
+          return null;
         }
         return maybeInstanceOfAnnotation(getAnnotation(path), type);
       },
@@ -498,7 +517,6 @@ export default function ({types: t, template}): Object {
     let falseCount = 0;
     let trueCount = 0;
     if (!a.types) {
-      //console.trace(a.type);
       return null;
     }
     for (let type of a.types) {
@@ -751,7 +769,7 @@ export default function ({types: t, template}): Object {
     }
     return t.logicalExpression(
       "||",
-      checks.undefined({input}).expression,
+      checks.void({input}),
       check
     );
   }
@@ -805,18 +823,18 @@ export default function ({types: t, template}): Object {
     const valueCheck = valueType ? checkAnnotation(value, valueType, scope) : null;
     if (!keyCheck) {
       if (!valueCheck) {
-        return checkIsMap({input}).expression;
+        return checkIsMap({input});
       }
       else {
-        return checkMapValues({input, value, valueCheck}).expression;
+        return checkMapValues({input, value, valueCheck});
       }
     }
     else {
       if (!valueCheck) {
-        return checkMapKeys({input, key, keyCheck}).expression;
+        return checkMapKeys({input, key, keyCheck});
       }
       else {
-        return checkMapEntries({input, key, value, keyCheck, valueCheck}).expression;
+        return checkMapEntries({input, key, value, keyCheck, valueCheck});
       }
     }
   }
@@ -826,26 +844,27 @@ export default function ({types: t, template}): Object {
     const value = t.identifier('value');
     const valueCheck = valueType ? checkAnnotation(value, valueType, scope) : null;
     if (!valueCheck) {
-      return checkIsSet({input}).expression;
+      return checkIsSet({input});
     }
     else {
-      return checkSetEntries({input, value, valueCheck}).expression;
+      return checkSetEntries({input, value, valueCheck});
     }
   }
+
   function checkArray ({input, types, scope}): Node {
-    if (types.length === 0) {
-      return checkIsArray({input}).expression;
+    if (!types || types.length === 0) {
+      return checkIsArray({input});
     }
     else if (types.length === 1) {
       const item = t.identifier('item');
       const type = types[0];
       const check = checkAnnotation(item, type, scope);
       if (!check) {
-        return checkIsArray({input}).expression;
+        return checkIsArray({input});
       }
       return t.logicalExpression(
         '&&',
-        checkIsArray({input}).expression,
+        checkIsArray({input}),
         t.callExpression(
           t.memberExpression(input, t.identifier('every')),
           [t.functionExpression(null, [item], t.blockStatement([
@@ -885,7 +904,7 @@ export default function ({types: t, template}): Object {
         );
       }, t.logicalExpression(
         '&&',
-        checkIsArray({input}).expression,
+        checkIsArray({input}),
         checkLength
       ));
     }
@@ -893,7 +912,7 @@ export default function ({types: t, template}): Object {
 
   function checkTuple ({input, types, scope}): Node {
     if (types.length === 0) {
-      return checkIsArray({input}).expression;
+      return checkIsArray({input});
     }
 
     // This is a tuple
@@ -926,20 +945,20 @@ export default function ({types: t, template}): Object {
       );
     }, t.logicalExpression(
       '&&',
-      checkIsArray({input}).expression,
+      checkIsArray({input}),
       checkLength
     ));
   }
 
   function checkObject ({input, properties, scope}): Node {
-    return properties.reduce((expr, prop, index) => {
+    const check = properties.reduce((expr, prop, index) => {
       const target = t.memberExpression(input, prop.key);
       let check = checkAnnotation(target, prop.value, scope);
       if (check) {
         if (prop.optional) {
           check = t.logicalExpression(
             '||',
-            checks.undefined({input: target}).expression,
+            checks.undefined({input: target}),
             check
           );
         }
@@ -952,7 +971,9 @@ export default function ({types: t, template}): Object {
       else {
         return expr;
       }
-    }, checkIsObject({input}).expression);
+    }, checkIsObject({input}));
+
+    return check;
   }
 
   function createTypeAliasChecks (path: NodePath): Node {
@@ -1005,28 +1026,31 @@ export default function ({types: t, template}): Object {
           return checks.set({input, types: annotation.typeParameters ? annotation.typeParameters.params : [], scope});
         }
         else if (annotation.id.name === 'Function') {
-          return checks.function({input}).expression;
+          return checks.function({input});
+        }
+        else if (annotation.id.name === 'Symbol') {
+          return checks.symbol({input});
         }
         else if (isTypeChecker(annotation.id, scope)) {
-          return checks.type({input, type: annotation.id}).expression;
+          return checks.type({input, type: annotation.id});
         }
         else if (isPolymorphicType(annotation.id, scope)) {
           return;
         }
         else {
-          return checks.instanceof({input, type: createTypeExpression(annotation.id)}).expression;
+          return checks.instanceof({input, type: createTypeExpression(annotation.id)});
         }
       case 'TupleTypeAnnotation':
         return checks.tuple({input, types: annotation.types, scope});
       case 'NumberTypeAnnotation':
       case 'NumericLiteralTypeAnnotation':
-        return checks.number({input}).expression;
+        return checks.number({input});
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
-        return checks.boolean({input}).expression;
+        return checks.boolean({input});
       case 'StringTypeAnnotation':
       case 'StringLiteralTypeAnnotation':
-        return checks.string({input}).expression;
+        return checks.string({input});
       case 'UnionTypeAnnotation':
         return checks.union({input, types: annotation.types, scope});
       case 'IntersectionTypeAnnotation':
@@ -1034,7 +1058,7 @@ export default function ({types: t, template}): Object {
       case 'ObjectTypeAnnotation':
         return checks.object({input, properties: annotation.properties, indexers: annotation.indexers, scope});
       case 'ArrayTypeAnnotation':
-        return checks.array({input, types: [annotation.elementType], scope});
+        return checks.array({input, types: [annotation.elementType || t.anyTypeAnnotation()], scope});
       case 'FunctionTypeAnnotation':
         return checks.function({input, params: annotation.params, returnType: annotation.returnType});
       case 'MixedTypeAnnotation':
@@ -1043,15 +1067,14 @@ export default function ({types: t, template}): Object {
       case 'ExistentialTypeParam':
         return checks.any({input});
       case 'NullableTypeAnnotation':
-        return checks.nullable({input, type: annotation.typeAnnotation, scope}).expression;
+        return checks.nullable({input, type: annotation.typeAnnotation, scope});
       case 'VoidTypeAnnotation':
-        return checks.undefined({input}).expression;
+        return checks.void({input});
     }
   }
 
   function staticCheckAnnotation (path: NodePath, annotation: TypeAnnotation): ?boolean {
     const other = getAnnotation(path);
-
     switch (annotation.type) {
       case 'TypeAnnotation':
       case 'FunctonTypeParam':
@@ -1062,6 +1085,9 @@ export default function ({types: t, template}): Object {
         }
         else if (isPolymorphicType(annotation.id, path.scope)) {
           return;
+        }
+        else if (annotation.id.name === 'Symbol') {
+          return staticChecks.symbol(path);
         }
         else {
           return staticChecks.instanceof({path, type: createTypeExpression(annotation.id)});
@@ -1075,7 +1101,11 @@ export default function ({types: t, template}): Object {
    * Get the type annotation for a given node.
    */
   function getAnnotation (path: NodePath): TypeAnnotation {
-    let annotation = getAnnotationShallow(path);
+    let annotation;
+    try {
+      annotation = getAnnotationShallow(path);
+    }
+    catch (e) {}
     while (annotation && annotation.type === 'TypeAnnotation') {
       annotation = annotation.typeAnnotation;
     }
@@ -1106,13 +1136,6 @@ export default function ({types: t, template}): Object {
           else if (isPolymorphicType(id, scope)) {
             return t.anyTypeAnnotation();
           }
-          else {
-            const binding = scope.getBinding(node.name);
-            const violation = getConstantViolationsBefore(binding, path).pop();
-            if (violation) {
-              return getAnnotation(violation);
-            }
-          }
           return path.getTypeAnnotation();
         case 'NumericLiteral':
         case 'StringLiteral':
@@ -1121,6 +1144,9 @@ export default function ({types: t, template}): Object {
         case 'CallExpression':
           const callee = path.get('callee');
           if (callee.type === 'Identifier') {
+            if (callee.name === 'Symbol') {
+              return t.genericTypeAnnotation('Symbol');
+            }
             const fn = getFunctionForIdentifier(callee);
             if (fn) {
               return getAnnotation(fn);
@@ -1226,7 +1252,7 @@ export default function ({types: t, template}): Object {
   function getArrayExpressionAnnotation (path: NodePath): TypeAnnotation {
     return t.genericTypeAnnotation(
       t.identifier('Array'),
-      path.get('elements').map(getAnnotation)
+      t.typeParameters(path.get('elements').map(getAnnotation))
     );
   }
 
@@ -1431,6 +1457,57 @@ export default function ({types: t, template}): Object {
         let falseCount = 0;
         for (let type of annotation.types) {
           const result = maybeStringAnnotation(type);
+          if (result === true) {
+            return true;
+          }
+          else if (result === false) {
+            falseCount++;
+          }
+        }
+        if (falseCount === annotation.types.length) {
+          return false;
+        }
+        else {
+          return null;
+        }
+      case 'AnyTypeAnnotation':
+      case 'MixedTypeAnnotation':
+      case 'IntersectionTypeAnnotation':
+        return null;
+      default:
+        return false;
+    }
+  }
+
+/**
+   * Returns `true` if the annotation is compatible with a symbol,
+   * `false` if it definitely isn't, or `null` if we're not sure.
+   */
+  function maybeSymbolAnnotation (annotation: TypeAnnotation): ?boolean {
+    switch (annotation.type) {
+      case 'TypeAnnotation':
+      case 'FunctonTypeParam':
+      case 'NullableTypeAnnotation':
+        return maybeSymbolAnnotation(annotation.typeAnnotation);
+      case 'GenericTypeAnnotation':
+        switch (annotation.id.name) {
+          case 'Array':
+          case 'Function':
+          case 'Object':
+          case 'Number':
+          case 'Boolean':
+          case 'Date':
+          case 'RegExp':
+            return false;
+          case 'Symbol':
+            return true;
+          default:
+            return null;
+        }
+      case 'UnionTypeAnnotation':
+        let falseCount = 0;
+        for (let type of annotation.types) {
+          const result = maybeSymbolAnnotation(type);
           if (result === true) {
             return true;
           }
@@ -1773,7 +1850,16 @@ export default function ({types: t, template}): Object {
       return false;
     }
     const {path} = binding;
-    return path != null && (path.type === 'TypeAlias' || path.type === 'ImportSpecifier' || (path.type === 'VariableDeclaration' && path.node.isTypeChecker));
+    if (path == null) {
+      return false;
+    }
+    else if (path.type === 'TypeAlias' || (path.type === 'VariableDeclaration' && path.node.isTypeChecker)) {
+      return true;
+    }
+    else if (path.isImportSpecifier() && path.parent.importKind === 'type') {
+      return true;
+    }
+    return false;
   }
 
   function isPolymorphicType (id: Identifier|QualifiedTypeIdentifier, scope: Scope): boolean {
@@ -1784,7 +1870,7 @@ export default function ({types: t, template}): Object {
     let {path} = scope;
     while (path && path.type !== 'Program') {
       const {node} = path;
-      if (t.isFunction(node) && node.typeParameters) {
+      if ((t.isFunction(node) || t.isClass(node)) && node.typeParameters) {
         for (let param of node.typeParameters.params) {
           param.isPolymorphicType = true;
           if (param.name === id.name) {
@@ -1792,7 +1878,7 @@ export default function ({types: t, template}): Object {
           }
         }
       }
-      path = path.parent;
+      path = path.parentPath;
     }
     return false;
   }
@@ -1849,7 +1935,7 @@ export default function ({types: t, template}): Object {
     if (node.optional) {
       check = t.logicalExpression(
         '||',
-        checks.undefined({input: node}).expression,
+        checks.undefined({input: node}),
         check
       );
     }
@@ -1857,23 +1943,6 @@ export default function ({types: t, template}): Object {
     return guard({
       check,
       message
-    });
-  }
-
-  /**
-   * Get any constant violations before a given node.
-   * @fixme this is a copy of the internal babel api and relies on a private method.
-   */
-  function getConstantViolationsBefore (binding, path, functions) {
-    const violations = binding.constantViolations.slice();
-    violations.unshift(binding.path);
-    return violations.filter(violation => {
-      violation = violation.resolve();
-      const status = violation._guessExecutionStatusRelativeTo(path);
-      if (functions && status === "function") {
-        functions.push(violation);
-      }
-      return status === "before";
     });
   }
 
@@ -1902,7 +1971,7 @@ export default function ({types: t, template}): Object {
     if (node.optional) {
       check = t.logicalExpression(
         '||',
-        checks.undefined({input: id}).expression,
+        checks.undefined({input: id}),
         check
       );
     }
@@ -1921,7 +1990,7 @@ export default function ({types: t, template}): Object {
     return t.binaryExpression(
       '+',
       t.stringLiteral(message),
-      node.argument ? readableName({input: id || node.argument}).expression : t.stringLiteral('undefined')
+      node.argument ? readableName({input: id || node.argument}) : t.stringLiteral('undefined')
     );
   }
 
@@ -1932,7 +2001,7 @@ export default function ({types: t, template}): Object {
     return t.binaryExpression(
       '+',
       t.stringLiteral(message),
-      readableName({input: node}).expression
+      readableName({input: node})
     );
   }
 
@@ -1942,7 +2011,7 @@ export default function ({types: t, template}): Object {
     return t.binaryExpression(
       '+',
       t.stringLiteral(message),
-      readableName({input: node}).expression
+      readableName({input: node})
     );
   }
 
@@ -2052,5 +2121,17 @@ export default function ({types: t, template}): Object {
    */
   function identity <T> (input: T): T {
     return input;
+  }
+
+  function getExpression (node: Node): Node {
+    return t.isExpressionStatement(node) ? node.expression : node;
+  }
+
+  function expression (input: string): Function {
+    const fn: Function = template(input);
+    return function (...args) {
+      const node: Node = fn(...args);
+      return getExpression(node);
+    };
   }
 }
