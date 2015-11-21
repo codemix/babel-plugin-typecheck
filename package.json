@@ -4,8 +4,8 @@
   "description": "Transforms flow type annotations into runtime type checks.",
   "main": "lib/index.js",
   "scripts": {
-    "build": "babel -d ./lib ./src",
-    "build-typed": "npm run build && babel --plugins ./lib -d ./lib-checked ./src",
+    "build": "babel --plugins syntax-flow,transform-flow-strip-types -d ./lib ./src",
+    "build-typed": "npm run build && babel --plugins ./lib,syntax-flow,transform-flow-strip-types -d ./lib-checked ./src",
     "prepublish": "npm run build",
     "pretest": "npm run build",
     "test": "mocha ./test/index.js",

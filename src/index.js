@@ -101,7 +101,6 @@ export default function ({types: t, template}): Object {
   const stack: {node: Node; returns: number; isVoid: ?boolean; type: ?TypeAnnotation}[] = [];
 
   return {
-    inherits: require("babel-plugin-syntax-flow"),
     visitor: {
       TypeAlias (path: NodePath): void {
         path.replaceWith(createTypeAliasChecks(path));
@@ -289,7 +288,7 @@ export default function ({types: t, template}): Object {
           if (path.parent.type === 'Program' || path.parent.type === 'BlockStatement') {
             path.insertAfter(check);
           }
-          else if (path.parent.type === 'ExportNamedDeclaration' || path.parent.type === 'ExportDefaultDeclaration' || path.parent.type === 'ExportAllDeclaration') {
+          else if (path.parent.type === 'ExportNamedDeclaration' || path.parent.type === 'ExportDefaultDeclaration' || path.parent.type === 'ExportAllDeclaration' || path.parentPath.isForXStatement()) {
             path.parentPath.insertAfter(check);
           }
           else {
@@ -1846,7 +1845,16 @@ export default function ({types: t, template}): Object {
       return false;
     }
     const {path} = binding;
-    return path != null && (path.type === 'TypeAlias' || path.type === 'ImportSpecifier' || (path.type === 'VariableDeclaration' && path.node.isTypeChecker));
+    if (path == null) {
+      return false;
+    }
+    else if (path.type === 'TypeAlias' || (path.type === 'VariableDeclaration' && path.node.isTypeChecker)) {
+      return true;
+    }
+    else if (path.isImportSpecifier() && path.parent.importKind === 'type') {
+      return true;
+    }
+    return false;
   }
 
   function isPolymorphicType (id: Identifier|QualifiedTypeIdentifier, scope: Scope): boolean {

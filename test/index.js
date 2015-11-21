@@ -12,6 +12,7 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok("bug-xxx-export");
   ok('new', 'bob');
   ok('symbols', Symbol('foo'));
   failWith(`Value of argument "input" violates contract, expected Symbol got string`, 'symbols', 'wat');

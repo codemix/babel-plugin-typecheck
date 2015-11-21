@@ -1,7 +1,7 @@
 require("babel-core/register")({
   "presets": ["stage-1", "es2015"],
   "plugins": [
-    "syntax-flow",
+    //"syntax-flow",
     "transform-flow-strip-types"
   ]
 });
