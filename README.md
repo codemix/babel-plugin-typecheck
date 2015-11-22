@@ -44,6 +44,31 @@ function bar (input: string = 123): string { // <-- SyntaxError: default value i
 }
 ```
 
+# Installation
+
+First, install via [npm](https://npmjs.org/package/babel-plugin-typecheck).
+```sh
+npm install --save-dev babel-plugin-typecheck
+```
+Then, in your babel configuration (usually in your `.babelrc` file), add `"typecheck"` to your list of plugins:
+```json
+{
+  "plugins": ["typecheck"]
+}
+```
+
+**Important**: This plugin has a dependency on `babel-plugin-syntax-flow` and `babel-plugin-transform-flow-strip-types`.
+Without `syntax-flow`, babel will be unable to parse the flow annotation syntax.
+Without `transform-flow-strip-types`, the type annotations will be included in the output which will make it unparsable by JS engines.
+
+If you are not already using the `babel-preset-react` plugin, you **must** install those plugins and include them in your babel configuration (usually `.babelrc`). Put them *after* `typecheck` in the list, e.g.
+```json
+{
+  "plugins": ["typecheck", "syntax-flow", "transform-flow-strip-types"]
+}
+```
+If you *are* using `babel-preset-react` you can ignore this warning.
+
 # Examples
 
 The basic format is similar to [Flow Type Annotations](http://flowtype.org/docs/type-annotations.html).
@@ -182,18 +207,6 @@ demo({name: 123, email: "test@test.com"}); // TypeError
 demo({name: "test", email: "test@test.com"}); // ok
 ```
 
-# Installation
-
-First, install via [npm](https://npmjs.org/package/babel-plugin-typecheck).
-```sh
-npm install --save-dev babel-plugin-typecheck
-```
-Then, in your babel configuration (usually in your `.babelrc` file), add `"typecheck"` to your list of plugins:
-```json
-{
-  "plugins": ["typecheck"]
-}
-```
 
 
 # License

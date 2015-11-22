@@ -12,6 +12,7 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('async-method', ['hello world']);
   ok('async-function', ['hello world']);
   failWith(`Value of argument "input" violates contract, expected string[] got Array`, 'async-function', [123]);
   failStatic('bad-async-function', 'hello world');
