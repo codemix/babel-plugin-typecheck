@@ -208,6 +208,26 @@ demo({name: "test", email: "test@test.com"}); // ok
 ```
 
 
+## Pragmas
+
+Sometimes you might need to disable type checking for a particular file or section of code.
+To ignore an entire file, add a comment at the top level scope of the file:
+```js
+// typecheck: ignore file
+export function wrong (input: string = 123): boolean {
+  return input + ' nope';
+}
+```
+
+To ignore a particular statement:
+```js
+let foo: string = "hello world";
+// typecheck: ignore statement
+foo = 123;
+```
+
+> Note: Because of how typecheck works, it's not possible to ignore individual lines, only entire statements or files.
+> So if you ignore e.g. an if statement, the entire body of that statement will be ignored.
 
 # License
 

@@ -98,16 +98,31 @@ export default function ({types: t, template}): Object {
     input instanceof Set && Array.from(input).every(value => valueCheck)
   `);
 
+  const PRAGMA_IGNORE_STATEMENT = /typecheck:\s*ignore\s+statement/i;
+  const PRAGMA_IGNORE_FILE = /typecheck:\s*ignore\s+file/i;
+
   const visitors = {
+    Statement (path: NodePath): void {
+      maybeSkip(path);
+    },
     TypeAlias (path: NodePath): void {
+      if (maybeSkip(path)) {
+        return;
+      }
       path.replaceWith(createTypeAliasChecks(path));
     },
 
     InterfaceDeclaration (path: NodePath): void {
+      if (maybeSkip(path)) {
+        return;
+      }
       path.replaceWith(createInterfaceChecks(path));
     },
 
     ExportNamedDeclaration (path: NodePath): void {
+      if (maybeSkip(path)) {
+        return;
+      }
       const {node, scope} = path;
       if (node.declaration && node.declaration.type === 'TypeAlias') {
         path.replaceWith(t.exportNamedDeclaration(
@@ -119,6 +134,9 @@ export default function ({types: t, template}): Object {
     },
 
     ImportDeclaration (path: NodePath): void {
+      if (maybeSkip(path)) {
+        return;
+      }
       if (path.node.importKind !== 'type') {
         return;
       }
@@ -151,6 +169,10 @@ export default function ({types: t, template}): Object {
 
     Function: {
       enter (path: NodePath): void {
+        if (maybeSkip(path)) {
+          return;
+        }
+
         const {node, scope} = path;
         const paramChecks = collectParamChecks(path);
         if (node.type === "ArrowFunctionExpression" && node.expression) {
@@ -171,6 +193,9 @@ export default function ({types: t, template}): Object {
     },
 
     ReturnStatement (path: NodePath): void {
+      if (maybeSkip(path)) {
+        return;
+      }
       const {node, parent, scope} = path;
       const fn = path.getFunctionParent();
       if (!fn) {
@@ -251,6 +276,9 @@ export default function ({types: t, template}): Object {
     },
 
     VariableDeclaration (path: NodePath): void {
+      if (maybeSkip(path)) {
+        return;
+      }
       const {node, scope} = path;
       const collected = [];
       const declarations = path.get("declarations");
@@ -295,6 +323,9 @@ export default function ({types: t, template}): Object {
     },
 
     AssignmentExpression (path: NodePath): void {
+      if (maybeSkip(path)) {
+        return;
+      }
       const {node, scope} = path;
       if (node.hasBeenTypeChecked || node.left.hasBeenTypeChecked || !t.isIdentifier(node.left)) {
         return;
@@ -368,7 +399,12 @@ export default function ({types: t, template}): Object {
   return {
     visitor: {
       Program (path: NodePath) {
-        return path.traverse(visitors);
+        for (let child of path.get('body')) {
+          if (maybeSkipFile(child)) {
+            return;
+          }
+        }
+        path.traverse(visitors);
       }
     }
   }
@@ -2115,6 +2151,30 @@ export default function ({types: t, template}): Object {
     }
   }
 
+  /**
+   * Determine whether the file should be skipped, based on the comments attached to the given node.
+   */
+  function maybeSkipFile (path: NodePath): boolean {
+    if (path.node.leadingComments && path.node.leadingComments.length) {
+      return path.node.leadingComments.some(comment => PRAGMA_IGNORE_FILE.test(comment.value));
+    }
+    return false;
+  }
+
+  /**
+   * Maybe skip the given path if it has a relevant pragma.
+   */
+  function maybeSkip (path: NodePath): boolean {
+    const {node} = path;
+    if (node.leadingComments && node.leadingComments.length) {
+      const comment = node.leadingComments[node.leadingComments.length - 1];
+      if (PRAGMA_IGNORE_STATEMENT.test(comment.value)) {
+        path.skip();
+        return true;
+      }
+    }
+    return false;
+  }
 
   /**
    * A function that returns its first argument, useful when filtering.

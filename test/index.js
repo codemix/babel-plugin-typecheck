@@ -12,6 +12,9 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('pragma-ignore-statement', 'some string');
+  ok('pragma-ignore-file', 'some string');
+
   ok('async-method', ['hello world']);
   ok('async-function', ['hello world']);
   failWith(`Value of argument "input" violates contract, expected string[] got Array`, 'async-function', [123]);
