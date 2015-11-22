@@ -18,6 +18,18 @@ type TypeAnnotation = {
   type: string;
 };
 
+interface StringLiteralTypeAnnotation extends TypeAnnotation {
+  type: 'StringLiteralTypeAnnotation';
+}
+
+interface NumericLiteralTypeAnnotation extends TypeAnnotation {
+  type: 'NumericLiteralTypeAnnotation';
+}
+
+interface BooleanLiteralTypeAnnotation extends TypeAnnotation {
+  type: 'BooleanLiteralTypeAnnotation';
+}
+
 type Scope = {};
 
 type NodePath = {
@@ -56,6 +68,7 @@ export default function ({types: t, template}): Object {
   const checkIsSet: (() => Node) = expression(`input instanceof Set`);
   const checkIsObject: (() => Node) = expression(`input != null && typeof input === 'object'`);
   const checkNotNull: (() => Node) = expression(`input != null`);
+  const checkEquals: (() => Node) = expression(`input === expected`);
 
   const declareTypeChecker: (() => Node) = template(`
     const id = function id (input) {
@@ -216,7 +229,7 @@ export default function ({types: t, template}): Object {
         return;
       }
       let id;
-      if (node.argument.type === 'Identifier') {
+      if (node.argument.type === 'Identifier' || t.isLiteral(node.argument)) {
         id = node.argument;
       }
       else {
@@ -235,7 +248,7 @@ export default function ({types: t, template}): Object {
       }
       if (parent.type !== 'BlockStatement' && parent.type !== 'Program') {
         const block = [];
-        if (node.argument.type !== 'Identifier') {
+        if (node.argument.type !== 'Identifier' && !t.isLiteral(node.argument)) {
           scope.push({id: id});
           block.push(t.expressionStatement(
             t.assignmentExpression(
@@ -255,7 +268,7 @@ export default function ({types: t, template}): Object {
         path.replaceWith(t.blockStatement(block));
       }
       else {
-        if (node.argument.type !== 'Identifier') {
+        if (node.argument.type !== 'Identifier' && !t.isLiteral(node.argument)) {
           scope.push({id: id});
           path.insertBefore(t.expressionStatement(
             t.assignmentExpression(
@@ -412,9 +425,12 @@ export default function ({types: t, template}): Object {
   function createChecks (): Object {
     return {
       number: expression(`typeof input === 'number'`),
+      numericLiteral: checkNumericLiteral,
       boolean: expression(`typeof input === 'boolean'`),
+      booleanLiteral: checkBooleanLiteral,
       function: expression(`typeof input === 'function'`),
       string: expression(`typeof input === 'string'`),
+      stringLiteral: checkStringLiteral,
       symbol: expression(`typeof input === 'symbol'`),
       undefined: expression(`input === undefined`),
       null: expression(`input === null`),
@@ -437,23 +453,8 @@ export default function ({types: t, template}): Object {
 
   function createStaticChecks (): Object {
     return {
-      string (path: NodePath): ?boolean {
-        return maybeStringAnnotation(getAnnotation(path));
-      },
       symbol (path: NodePath): ?boolean {
         return maybeSymbolAnnotation(getAnnotation(path));
-      },
-      number (path: NodePath): ?boolean {
-        return maybeNumberAnnotation(getAnnotation(path));
-      },
-      boolean (path: NodePath): ?boolean {
-        return maybeBooleanAnnotation(getAnnotation(path));
-      },
-      function (path: NodePath): ?boolean {
-        return maybeFunctionAnnotation(getAnnotation(path));
-      },
-      any (path: NodePath): ?boolean {
-        return null;
       },
       instanceof ({path, type}): ?boolean {
         const {node, scope} = path;
@@ -471,38 +472,6 @@ export default function ({types: t, template}): Object {
       type ({path, type}): ?boolean {
         return null;
       },
-      array ({path, types}): ?boolean {
-        const {node} = path;
-        if (node.type === 'ArrayExpression') {
-          if (types.length === 0) {
-            return true;
-          }
-          else if (node.elements.length < types.length) {
-            return false;
-          }
-          else {
-            return null;
-          }
-        }
-        else if (maybeArrayAnnotation(getAnnotation(path)) === false) {
-          return false;
-        }
-        else {
-          return null;
-        }
-      },
-      tuple ({path, types}) {
-        const {node} = path;
-        let annotation = getAnnotation(path);
-        if (annotation.type === 'TypeAnnotation' || annotation.type === 'NullableTypeAnnotation') {
-          annotation = annotation.typeAnnotation;
-        }
-        return maybeTupleAnnotation(annotation);
-      },
-      union: checkStaticUnion,
-      intersection: checkStaticIntersection,
-      object: checkStaticObject,
-      nullable: checkStaticNullable,
     };
   }
 
@@ -516,14 +485,17 @@ export default function ({types: t, template}): Object {
     }
     switch (a.type) {
       case 'StringTypeAnnotation':
-      case 'StringLiteralTypeAnnotation':
         return maybeStringAnnotation(b);
+      case 'StringLiteralTypeAnnotation':
+        return compareStringLiteralAnnotations(a, b);
       case 'NumberTypeAnnotation':
-      case 'NumericLiteralTypeAnnotation':
         return maybeNumberAnnotation(b);
+      case 'NumericLiteralTypeAnnotation':
+        return compareNumericLiteralAnnotations(a, b);
       case 'BooleanTypeAnnotation':
-      case 'BooleanLiteralTypeAnnotation':
         return maybeBooleanAnnotation(b);
+      case 'BooleanLiteralTypeAnnotation':
+        return compareBooleanLiteralAnnotations(a, b);
       case 'FunctionTypeAnnotation':
         return maybeFunctionAnnotation(b);
       case 'AnyTypeAnnotation':
@@ -546,6 +518,33 @@ export default function ({types: t, template}): Object {
         return compareNullableAnnotation(a, b);
       default:
         return null;
+    }
+  }
+
+  function compareStringLiteralAnnotations (a: StringLiteralTypeAnnotation, b: TypeAnnotation): ?boolean {
+    if (b.type === 'StringLiteralTypeAnnotation') {
+      return a.value === b.value;
+    }
+    else {
+      return maybeStringAnnotation(b);
+    }
+  }
+
+  function compareBooleanLiteralAnnotations (a: BooleanLiteralTypeAnnotation, b: TypeAnnotation): ?boolean {
+    if (b.type === 'BooleanLiteralTypeAnnotation') {
+      return a.value === b.value;
+    }
+    else {
+      return maybeBooleanAnnotation(b);
+    }
+  }
+
+  function compareNumericLiteralAnnotations (a: NumericLiteralTypeAnnotation, b: TypeAnnotation): ?boolean {
+    if (b.type === 'NumericLiteralTypeAnnotation') {
+      return a.value === b.value;
+    }
+    else {
+      return maybeNumberAnnotation(b);
     }
   }
 
@@ -741,63 +740,6 @@ export default function ({types: t, template}): Object {
     return t.tupleTypeAnnotation(elements.map(element => getAnnotation(element)));
   }
 
-  function checkStaticUnion ({path, types}) {
-    let falseCount = 0;
-    let nullCount = 0;
-    for (let type of types) {
-      const result = staticCheckAnnotation(path, type);
-      if (result === true) {
-        return true;
-      }
-      else if (result === false) {
-        falseCount++;
-      }
-      else {
-        nullCount++;
-      }
-    }
-    if (falseCount === types.length) {
-      return false;
-    }
-    else {
-      return null;
-    }
-  }
-
-
-  function checkStaticIntersection ({path, types}) {
-    let trueCount = 0;
-    for (let type of types) {
-      const result = staticCheckAnnotation(path, type);
-      if (result === true) {
-        trueCount++;
-      }
-      else if (result === false) {
-        return false;
-      }
-    }
-    if (trueCount === types.length) {
-      return true;
-    }
-    else {
-      return null;
-    }
-  }
-
-
-  function checkStaticObject ({path, type}) {
-  }
-
-  function checkStaticNullable ({path, type}): ?boolean {
-    const annotation = getAnnotation(path);
-    if (annotation.type === 'VoidTypeAnnotation' || annotation.type === 'NullableTypeAnnotation') {
-      return true;
-    }
-    else {
-      return staticCheckAnnotation(path, type);
-    }
-  }
-
   function checkNullable ({input, type, scope}): ?Node {
     const check = checkAnnotation(input, type, scope);
     if (!check) {
@@ -819,6 +761,18 @@ export default function ({types: t, template}): Object {
       default:
         return checkAnnotation(input, annotation, scope);
     }
+  }
+
+  function checkStringLiteral ({input, annotation}): ?Node {
+    return checkEquals({input, expected: t.stringLiteral(annotation.value)});
+  }
+
+  function checkNumericLiteral ({input, annotation}): ?Node {
+    return checkEquals({input, expected: t.numericLiteral(annotation.value)});
+  }
+
+  function checkBooleanLiteral ({input, annotation}): ?Node {
+    return checkEquals({input, expected: t.booleanLiteral(annotation.value)});
   }
 
   function checkUnion ({input, types, scope}): ?Node {
@@ -1079,14 +1033,17 @@ export default function ({types: t, template}): Object {
       case 'TupleTypeAnnotation':
         return checks.tuple({input, types: annotation.types, scope});
       case 'NumberTypeAnnotation':
-      case 'NumericLiteralTypeAnnotation':
         return checks.number({input});
+      case 'NumericLiteralTypeAnnotation':
+        return checks.numericLiteral({input, annotation});
       case 'BooleanTypeAnnotation':
-      case 'BooleanLiteralTypeAnnotation':
         return checks.boolean({input});
+      case 'BooleanLiteralTypeAnnotation':
+        return checks.booleanLiteral({input, annotation});
       case 'StringTypeAnnotation':
-      case 'StringLiteralTypeAnnotation':
         return checks.string({input});
+      case 'StringLiteralTypeAnnotation':
+        return checks.stringLiteral({input, annotation});
       case 'UnionTypeAnnotation':
         return checks.union({input, types: annotation.types, scope});
       case 'IntersectionTypeAnnotation':
@@ -1173,10 +1130,10 @@ export default function ({types: t, template}): Object {
             return t.anyTypeAnnotation();
           }
           return path.getTypeAnnotation();
-        case 'NumericLiteral':
         case 'StringLiteral':
+        case 'NumericLiteral':
         case 'BooleanLiteral':
-          return path.getTypeAnnotation();
+          return createLiteralTypeAnnotation(path);
         case 'CallExpression':
           const callee = path.get('callee');
           if (callee.type === 'Identifier') {
@@ -1211,6 +1168,24 @@ export default function ({types: t, template}): Object {
       }
     }
     return node.savedTypeAnnotation || node.returnType || node.typeAnnotation || path.getTypeAnnotation();
+  }
+
+  function createLiteralTypeAnnotation (path: NodePath): ?TypeAnnotation {
+    let annotation;
+    if (path.isStringLiteral()) {
+      annotation = t.stringLiteralTypeAnnotation();
+    }
+    else if (path.isNumericLiteral()) {
+      annotation = t.numericLiteralTypeAnnotation();
+    }
+    else if (path.isBooleanLiteral()) {
+      annotation = t.booleanLiteralTypeAnnotation();
+    }
+    else {
+      return path.getTypeAnnotation();
+    }
+    annotation.value = path.node.value;
+    return annotation;
   }
 
   function getObjectMethodAnnotation (path: NodePath): ?TypeAnnotation {
@@ -1474,8 +1449,9 @@ export default function ({types: t, template}): Object {
       case 'NullableTypeAnnotation':
         return maybeStringAnnotation(annotation.typeAnnotation);
       case 'StringTypeAnnotation':
-      case 'StringLiteralTypeAnnotation':
         return true;
+      case 'StringLiteralTypeAnnotation':
+        return null;
       case 'GenericTypeAnnotation':
         switch (annotation.id.name) {
           case 'Array':
@@ -1860,24 +1836,6 @@ export default function ({types: t, template}): Object {
       default:
         return generate(annotation).code;
     }
-  }
-
-  function humanReadableObject (annotation: TypeAnnotation, scope: Scope): string {
-    if (annotation.properties.length === 0) {
-      return `an object`;
-    }
-    else {
-      const shape = generate(annotation).code;
-      return `an object with shape ${shape}`;
-    }
-  }
-
-  function humanReadableArray (annotation: TypeAnnotation, scope: Scope): string {
-    return generate(annotation).code;
-  }
-
-  function humanReadableTuple (annotation: TypeAnnotation, scope: Scope): string {
-    return generate(annotation).code;
   }
 
   function isTypeChecker (id: Identifier|QualifiedTypeIdentifier, scope: Scope): boolean {

@@ -12,6 +12,23 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('string-literal-annotations', 'foo');
+  ok('string-literal-annotations', 'bar');
+  failWith(`Value of argument "input" violates contract, expected "foo" | "bar" got string`, 'string-literal-annotations', 'wat');
+  failStatic('bad-string-literal-annotations', 'foo');
+
+  ok('boolean-literal-annotations', true);
+  ok('boolean-literal-annotations', false);
+  failWith(`Value of argument "input" violates contract, expected true | false got string`, 'boolean-literal-annotations', 'wat');
+
+  ok('numeric-literal-annotations', 1);
+  ok('numeric-literal-annotations', 2);
+  failWith(`Value of argument "input" violates contract, expected 1 | 2 got number`, 'numeric-literal-annotations', 3);
+
+  ok('enum', 'active');
+  ok('enum', 'inactive');
+  failWith(`Value of argument "input" violates contract, expected status got string`, 'enum', 'pending');
+
   ok('pragma-ignore-statement', 'some string');
   ok('pragma-ignore-file', 'some string');
 
@@ -252,7 +269,6 @@ function fail (basename, ...args) {
     }
     catch (e) {
       failed = true;
-      console.log(e);
     }
     if (!failed) {
       throw new Error(`Test '${basename}' should have failed but did not.`);
