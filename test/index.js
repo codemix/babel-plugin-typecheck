@@ -12,6 +12,10 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('async-method', ['hello world']);
+  ok('async-function', ['hello world']);
+  failWith(`Value of argument "input" violates contract, expected string[] got Array`, 'async-function', [123]);
+  failStatic('bad-async-function', 'hello world');
   ok('class-getter', 'alice');
   ok("bug-xxx-export");
   ok('new', 'bob');
@@ -220,18 +224,28 @@ function loadInternal (basename) {
   return context;
 }
 
+function isThenable (thing: mixed): boolean {
+  return thing && typeof thing.then === 'function';
+}
+
 
 function ok (basename, ...args) {
-  it(`should load '${basename}'`, function () {
-    load(basename)(...args);
+  it(`should load '${basename}'`, async function () {
+    const result = load(basename)(...args);
+    if (isThenable(result)) {
+      await result;
+    }
   });
 }
 
 function fail (basename, ...args) {
-  it(`should not load '${basename}'`, function () {
+  it(`should not load '${basename}'`, async function () {
     let failed = false;
     try {
-      load(basename)(...args);
+      const result = load(basename)(...args);
+      if (isThenable(result)) {
+        await result;
+      }
     }
     catch (e) {
       failed = true;
@@ -244,11 +258,14 @@ function fail (basename, ...args) {
 }
 
 function failWith (errorMessage, basename, ...args) {
-  it(`should not load '${basename}'`, function () {
+  it(`should not load '${basename}'`, async function () {
     let failed = false;
     let message;
     try {
-      load(basename)(...args);
+      const result = load(basename)(...args);
+      if (isThenable(result)) {
+        await result;
+      }
     }
     catch (e) {
       failed = true;
