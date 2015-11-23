@@ -12,6 +12,41 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('class-getter', 'alice');
+  failStatic('bad-class-getter', 'alice');
+  ok('class-setter', 'alice');
+  failStatic('bad-class-setter', 'alice');
+  failWith(`Value of argument "name" violates contract, expected string got number`, 'class-setter', 123);
+  ok('class-properties-complex', 'sally', 'bob@example.com', {
+    address: '123 Fake Street',
+    country: 'FR',
+    pos: {
+      lat: 12.34,
+      lon: 45.67
+    }
+  }, 'FR');
+
+  failWith(`Value of "user.location.country" violates contract, expected CountryCode got string`, 'class-properties-complex', 'sally', 'bob@example.com', {
+    address: '123 Fake Street',
+    country: 'FR',
+    pos: {
+      lat: 12.34,
+      lon: 45.67
+    }
+  }, 'Invalid');
+
+  failWith(`Value of "user.location.country" violates contract, expected CountryCode got boolean`, 'class-properties-complex', 'sally', 'bob@example.com', {
+    address: '123 Fake Street',
+    country: 'FR',
+    pos: {
+      lat: 12.34,
+      lon: 45.67
+    }
+  }, false);
+  ok('class-properties', 'bob', 'bob@example.com');
+  failWith(`Value of "this.email" violates contract, expected string got null`, 'class-properties', 'bob', null);
+  failWith(`Value of "this.name" violates contract, expected string got boolean`, 'class-properties', false, 'bob@example.com');
+
   ok('string-literal-annotations', 'foo');
   ok('string-literal-annotations', 'bar');
   failWith(`Value of argument "input" violates contract, expected "foo" | "bar" got string`, 'string-literal-annotations', 'wat');
@@ -201,7 +236,7 @@ describe('Typecheck', function () {
   ok('conditional-expression', 'foo');
 
   it(`should load itself`, function () {
-    this.timeout(30000); // @fixme We are currently unacceptably slow.
+    this.timeout(60000); // @fixme We are currently unacceptably slow.
     load('/../../src/index');
   });
 });
