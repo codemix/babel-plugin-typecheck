@@ -1103,7 +1103,7 @@ export default function ({types: t, template}): Object {
       case 'IntersectionTypeAnnotation':
         return checks.intersection({input, types: annotation.types, scope});
       case 'ObjectTypeAnnotation':
-        return checks.object({input, properties: annotation.properties, indexers: annotation.indexers, scope});
+        return checks.object({input, properties: annotation.properties || [], indexers: annotation.indexers, scope});
       case 'ArrayTypeAnnotation':
         return checks.array({input, types: [annotation.elementType || t.anyTypeAnnotation()], scope});
       case 'FunctionTypeAnnotation':
@@ -1297,18 +1297,34 @@ export default function ({types: t, template}): Object {
 
   function getThisExpressionAnnotation (path: NodePath): ?TypeAnnotation {
     let parent = path.parentPath;
-    while (parent) {
+    loop: while (parent) {
       switch (parent.type) {
         case 'ClassDeclaration':
           return getAnnotation(parent);
+        case 'ClassBody':
+          return getAnnotation(parent.parentPath);
+        case 'ClassMethod':
+        case 'ClassProperty':
+          return getAnnotation(parent.parentPath.parentPath);
         case 'ObjectProperty':
-          console.log('FIXME', parent);
-          break;
-        case 'FunctionDeclaration':
-          break;
+          return getAnnotation(parent.parentPath);
+        case 'ObjectMethod':
+          return getAnnotation(parent.parentPath);
+        case 'FunctionExpression':
+          if (parent.parentPath.type === 'ObjectProperty') {
+            return getAnnotation(parent.parentPath.parentPath);
+          }
+          break loop;
+        case 'ArrowFunctionExpression':
+          parent = parent.parentPath;
+          continue;
+      }
+      if (parent.isFunction()) {
+        break;
       }
       parent = parent.parentPath;
     }
+    return t.objectTypeAnnotation([]);
   }
 
   function getClassDeclarationAnnotation (path: NodePath): ?TypeAnnotation {
@@ -1450,7 +1466,7 @@ export default function ({types: t, template}): Object {
     }
     const objectAnnotation = stack.reduceRight((last, target) => {
       let annotation = last;
-      if (annotation === null) {
+      if (annotation == null) {
         if (stack.length === 1) {
           annotation = getAnnotation(target.get('object'));
         }
@@ -1484,7 +1500,7 @@ export default function ({types: t, template}): Object {
           return annotation;
         case 'ObjectTypeAnnotation':
           const id = target.get('property').node;
-          for (let {key, value} of annotation.properties) {
+          for (let {key, value} of annotation.properties || []) {
             if (key.name === id.name) {
               return value;
             }

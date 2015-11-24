@@ -12,6 +12,14 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('object-method', 'bob', 'bob@example.com');
+  failStatic('bad-object-method', 'bob', 'bob@example.com');
+  failStatic('bad-object-method-arrow', 'bob', 'bob@example.com');
+  failWith(`Value of "this.name" violates contract, expected string got boolean`, 'object-method', false, 'bob@example.com');
+  ok('object-properties', 'bob', 'bob@example.com');
+  failStatic('bad-object-properties', 'bob', 'bob@example.com');
+  failWith(`Value of "user.name" violates contract, expected string got boolean`, 'object-properties', false, 'bob@example.com');
+  failWith(`Value of "user.email" violates contract, expected string got boolean`, 'object-properties', 'bob', false);
   ok('class-getter', 'alice');
   failStatic('bad-class-getter', 'alice');
   ok('class-setter', 'alice');
@@ -46,7 +54,6 @@ describe('Typecheck', function () {
   ok('class-properties', 'bob', 'bob@example.com');
   failWith(`Value of "this.email" violates contract, expected string got null`, 'class-properties', 'bob', null);
   failWith(`Value of "this.name" violates contract, expected string got boolean`, 'class-properties', false, 'bob@example.com');
-
   ok('string-literal-annotations', 'foo');
   ok('string-literal-annotations', 'bar');
   failWith(`Value of argument "input" violates contract, expected "foo" | "bar" got string`, 'string-literal-annotations', 'wat');
