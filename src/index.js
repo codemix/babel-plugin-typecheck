@@ -4,6 +4,10 @@ type Node = {
   type: string;
 };
 
+type Literal = {
+  type: 'StringLiteral' | 'BooleanLiteral' | 'NumericLiteral' | 'NullLiteral' | 'RegExpLiteral'
+};
+
 type Identifier = {
   type: string;
   name: string;
@@ -42,10 +46,6 @@ type NodePath = {
  * # Typecheck Transformer
  */
 export default function ({types: t, template}): Object {
-  // constants used when statically verifying types
-  const TYPE_INVALID = 0;
-  const TYPE_VALID = 1;
-  const TYPE_UNKNOWN = 2;
 
   /**
    * Binary Operators that can only produce boolean results.
@@ -200,7 +200,7 @@ export default function ({types: t, template}): Object {
         const {node, scope} = path;
         const isVoid = node.savedTypeAnnotation ? maybeNullableAnnotation(node.savedTypeAnnotation) : null;
         if (!node.returnCount && isVoid === false) {
-          throw path.buildCodeFrameError(`Function ${node.id ? `"${node.id.name}" ` : ''}did not return a value, expected ${humanReadableType(node.savedTypeAnnotation, scope)}`);
+          throw path.buildCodeFrameError(`Function ${node.id ? `"${node.id.name}" ` : ''}did not return a value, expected ${humanReadableType(node.savedTypeAnnotation)}`);
         }
       }
     },
@@ -224,7 +224,7 @@ export default function ({types: t, template}): Object {
       }
       if (!node.argument) {
         if (maybeNullableAnnotation(returnType) === false) {
-          throw path.buildCodeFrameError(`Function ${fn.node.id ? `"${fn.node.id.name}" ` : ''}did not return a value, expected ${humanReadableType(returnType, path.scope)}`);
+          throw path.buildCodeFrameError(`Function ${fn.node.id ? `"${fn.node.id.name}" ` : ''}did not return a value, expected ${humanReadableType(returnType)}`);
         }
         return;
       }
@@ -240,7 +240,7 @@ export default function ({types: t, template}): Object {
         return;
       }
       else if (ok === false) {
-        throw path.buildCodeFrameError(`Invalid return type, expected ${humanReadableType(returnType, scope)}`);
+        throw path.buildCodeFrameError(`Invalid return type, expected ${humanReadableType(returnType)} got ${humanReadableType(getAnnotation(path.get('argument')))}`);
       }
       const check = checkAnnotation(id, returnType, scope);
       if (!check) {
@@ -308,7 +308,7 @@ export default function ({types: t, template}): Object {
           continue;
         }
         else if (ok === false) {
-          throw path.buildCodeFrameError(`Invalid assignment value, expected ${humanReadableType(id.typeAnnotation, scope)}`);
+          throw path.buildCodeFrameError(`Invalid assignment value, expected ${humanReadableType(id.typeAnnotation)} got ${humanReadableType(getAnnotation(declarations[i]))}`);
         }
         const check = checkAnnotation(id, id.typeAnnotation, scope);
         if (check) {
@@ -326,7 +326,23 @@ export default function ({types: t, template}): Object {
         if (path.parent.type === 'Program' || path.parent.type === 'BlockStatement') {
           path.insertAfter(check);
         }
-        else if (path.parent.type === 'ExportNamedDeclaration' || path.parent.type === 'ExportDefaultDeclaration' || path.parent.type === 'ExportAllDeclaration' || path.parentPath.isForXStatement()) {
+        else if (path.parentPath.isForXStatement() || path.parentPath.isForStatement() || path.parentPath.isForInStatement()) {
+          let body = path.parentPath.get('body');
+          if (body.type !== 'BlockStatement') {
+            const block = t.blockStatement([body.node]);
+            body.replaceWith(block);
+            body = path.parentPath.get('body');
+          }
+          const children = body.get('body');
+          if (children.length === 0) {
+            body.replaceWith(check);
+          }
+          else {
+            children[0].insertBefore(check);
+          }
+
+        }
+        else if (path.parent.type === 'ExportNamedDeclaration' || path.parent.type === 'ExportDefaultDeclaration' || path.parent.type === 'ExportAllDeclaration') {
           path.parentPath.insertAfter(check);
         }
         else {
@@ -340,38 +356,48 @@ export default function ({types: t, template}): Object {
         return;
       }
       const {node, scope} = path;
-      if (node.hasBeenTypeChecked || node.left.hasBeenTypeChecked || !t.isIdentifier(node.left)) {
+      const left = path.get('left');
+      let annotation;
+      if (node.hasBeenTypeChecked || node.left.hasBeenTypeChecked) {
         return;
       }
-      const binding = scope.getBinding(node.left.name);
-      if (!binding) {
-        return;
+      else if (left.isMemberExpression()) {
+        annotation = getAnnotation(left);
       }
-      else if (binding.path.type !== 'VariableDeclarator') {
-        return;
+      else if (t.isIdentifier(node.left)) {
+        const binding = scope.getBinding(node.left.name);
+        if (!binding) {
+          return;
+        }
+        else if (binding.path.type !== 'VariableDeclarator') {
+          return;
+        }
+        annotation = left.getTypeAnnotation();
+        if (annotation.type === 'AnyTypeAnnotation') {
+          const item = binding.path.get('id');
+          annotation = item.node.savedTypeAnnotation || item.getTypeAnnotation();
+        }
       }
-      let annotation = path.get('left').getTypeAnnotation();
-      if (annotation.type === 'AnyTypeAnnotation') {
-        const item = binding.path.get('id');
-        annotation = item.node.savedTypeAnnotation || item.getTypeAnnotation();
+      else {
+        return;
       }
 
       node.hasBeenTypeChecked = true;
       node.left.hasBeenTypeChecked = true;
+      const id = node.left;
+      const right = path.get('right');
       if (annotation.type === 'AnyTypeAnnotation') {
-        annotation = getAnnotation(path.get('right'));
+        annotation = getAnnotation(right);
         if (allowsAny(annotation)) {
           return;
         }
       }
-      const id = node.left;
-      const right = path.get('right');
       const ok = staticCheckAnnotation(right, annotation);
       if (ok === true) {
         return;
       }
       else if (ok === false) {
-        throw path.buildCodeFrameError(`Invalid assignment value, expected ${humanReadableType(annotation, scope)}`);
+        throw path.buildCodeFrameError(`Invalid assignment value, expected ${humanReadableType(annotation)} got ${humanReadableType(getAnnotation(right))}`);
       }
       const check = checkAnnotation(id, annotation, scope);
       if (!id.typeAnnotation) {
@@ -379,7 +405,8 @@ export default function ({types: t, template}): Object {
       }
       id.hasBeenTypeChecked = true;
       if (check) {
-        path.getStatementParent().insertAfter(guard({
+        const parent = path.getStatementParent();
+        parent.insertAfter(guard({
           check,
           message: varTypeErrorMessage(id, scope)
         }));
@@ -419,6 +446,19 @@ export default function ({types: t, template}): Object {
         }
         path.traverse(visitors);
       }
+    }
+  }
+
+  function isThisMemberExpression (path: NodePath): boolean {
+    const {node} = path;
+    if (node.type === 'ThisExpression') {
+      return true;
+    }
+    else if (node.type === 'MemberExpression') {
+      return isThisMemberExpression(path.get('object'));
+    }
+    else {
+      return false;
     }
   }
 
@@ -605,6 +645,8 @@ export default function ({types: t, template}): Object {
 
   function compareObjectAnnotation (a: Node, b: Node): ?boolean {
     switch (b.type) {
+      case 'ObjectTypeAnnotation':
+        break;
       case 'TypeAnnotation':
       case 'FunctonTypeParam':
       case 'NullableTypeAnnotation':
@@ -625,6 +667,29 @@ export default function ({types: t, template}): Object {
       default:
         return null;
     }
+
+    // We're comparing two object annotations.
+    let allTrue = true;
+    for (let aprop of a.properties) {
+      let found = false;
+      for (let bprop of b.properties) {
+        if (bprop.key.name === aprop.key.name) {
+          const result = compareAnnotations(aprop.value, bprop.value);
+          if (result === false) {
+            return false;
+          }
+          else {
+            found = result;
+          }
+          break;
+        }
+      }
+      if (found === false) {
+        return false;
+      }
+      allTrue = allTrue && found === true;
+    }
+    return allTrue ? true : null;
   }
 
   function compareArrayAnnotation (a: Node, b: Node): ?boolean {
@@ -973,6 +1038,8 @@ export default function ({types: t, template}): Object {
     const check = checkAnnotation(input, annotation, scope) || t.booleanLiteral(true);
     const declaration = declareTypeChecker({id, check});
     declaration.isTypeChecker = true;
+    declaration.savedTypeAnnotation = annotation;
+    declaration.declarations[0].savedTypeAnnotation = annotation;
     return declaration;
   }
 
@@ -1049,7 +1116,7 @@ export default function ({types: t, template}): Object {
       case 'IntersectionTypeAnnotation':
         return checks.intersection({input, types: annotation.types, scope});
       case 'ObjectTypeAnnotation':
-        return checks.object({input, properties: annotation.properties, indexers: annotation.indexers, scope});
+        return checks.object({input, properties: annotation.properties || [], indexers: annotation.indexers, scope});
       case 'ArrayTypeAnnotation':
         return checks.array({input, types: [annotation.elementType || t.anyTypeAnnotation()], scope});
       case 'FunctionTypeAnnotation':
@@ -1098,7 +1165,14 @@ export default function ({types: t, template}): Object {
     try {
       annotation = getAnnotationShallow(path);
     }
-    catch (e) {}
+    catch (e) {
+      if (e instanceof SyntaxError) {
+        throw e;
+      }
+      else {
+        console.error(e.stack);
+      }
+    }
     while (annotation && annotation.type === 'TypeAnnotation') {
       annotation = annotation.typeAnnotation;
     }
@@ -1109,6 +1183,18 @@ export default function ({types: t, template}): Object {
     const {node, scope} = path;
     if (node.type === 'TypeAlias') {
       return node.right;
+    }
+    else if (node.type === 'ClassProperty' && node.typeAnnotation) {
+      return getClassPropertyAnnotation(path);
+    }
+    else if (node.type === 'ClassMethod' && node.returnType) {
+      return getClassMethodAnnotation(path);
+    }
+    else if (node.type === 'ObjectProperty' && node.typeAnnotation) {
+      return getObjectPropertyAnnotation(path);
+    }
+    else if (node.type === 'ObjectMethod' && node.returnType) {
+      return getObjectMethodAnnotation(path);
     }
     else if (!node.typeAnnotation && !node.savedTypeAnnotation && !node.returnType) {
       switch (path.type) {
@@ -1146,6 +1232,8 @@ export default function ({types: t, template}): Object {
             }
           }
           break;
+        case 'ThisExpression':
+          return getThisExpressionAnnotation(path);
         case 'AssignmentExpression':
           return getAssignmentExpressionAnnotation(path);
         case 'MemberExpression':
@@ -1162,6 +1250,16 @@ export default function ({types: t, template}): Object {
           return getLogicalExpressionAnnotation(path);
         case 'ConditionalExpression':
           return getConditionalExpressionAnnotation(path);
+        case 'ObjectMethod':
+          return getObjectMethodAnnotation(path);
+        case 'ObjectProperty':
+          return getObjectPropertyAnnotation(path);
+        case 'ClassDeclaration':
+          return getClassDeclarationAnnotation(path);
+        case 'ClassMethod':
+          return getClassMethodAnnotation(path);
+        case 'ClassProperty':
+          return getClassPropertyAnnotation(path);
         default:
           return path.getTypeAnnotation();
 
@@ -1188,19 +1286,104 @@ export default function ({types: t, template}): Object {
     return annotation;
   }
 
+  function getObjectPropertyAnnotation (path: NodePath): ?TypeAnnotation {
+    const {node} = path;
+    const annotation = node.typeAnnotation || (node.value ? node.value.savedTypeAnnotation || node.value.typeAnnotation : t.anyTypeAnnotation());
+    return t.objectTypeProperty(
+      t.identifier(node.key.name),
+      annotation || t.anyTypeAnnotation()
+    );
+  }
+
   function getObjectMethodAnnotation (path: NodePath): ?TypeAnnotation {
     const {node} = path;
-    return t.functionTypeAnnotation(
-      null,
-      node.params.map(param => param.savedTypeAnnotation || param.typeAnnotation),
-      null,
-      node.savedTypeAnnotation || node.returnType || node.typeAnnotation || t.anyTypeAnnotation()
+    return t.objectTypeProperty(
+      t.identifier(node.key.name),
+      t.functionTypeAnnotation(
+        null,
+        node.params.map(param => param.savedTypeAnnotation || param.typeAnnotation),
+        null,
+        node.savedTypeAnnotation || node.returnType || node.typeAnnotation || t.anyTypeAnnotation()
+      )
     );
+  }
+
+  function getThisExpressionAnnotation (path: NodePath): ?TypeAnnotation {
+    let parent = path.parentPath;
+    loop: while (parent) {
+      switch (parent.type) {
+        case 'ClassDeclaration':
+          return getAnnotation(parent);
+        case 'ClassBody':
+          return getAnnotation(parent.parentPath);
+        case 'ClassMethod':
+        case 'ClassProperty':
+          return getAnnotation(parent.parentPath.parentPath);
+        case 'ObjectProperty':
+          return getAnnotation(parent.parentPath);
+        case 'ObjectMethod':
+          return getAnnotation(parent.parentPath);
+        case 'FunctionExpression':
+          if (parent.parentPath.type === 'ObjectProperty') {
+            return getAnnotation(parent.parentPath.parentPath);
+          }
+          break loop;
+        case 'ArrowFunctionExpression':
+          parent = parent.parentPath;
+          continue;
+      }
+      if (parent.isFunction()) {
+        break;
+      }
+      parent = parent.parentPath;
+    }
+    return t.objectTypeAnnotation([]);
+  }
+
+  function getClassDeclarationAnnotation (path: NodePath): ?TypeAnnotation {
+    const body = path.get('body').get('body').map(getAnnotation);
+    return t.objectTypeAnnotation(body);
   }
 
   function getAssignmentExpressionAnnotation (path: NodePath): ?TypeAnnotation {
     if (path.node.operator === '=') {
       return getAnnotation(path.get('right'));
+    }
+  }
+
+  function getClassPropertyAnnotation (path: NodePath): ?TypeAnnotation {
+    const {node} = path;
+    const annotation = node.typeAnnotation || (node.value ? node.value.savedTypeAnnotation || node.value.typeAnnotation : t.anyTypeAnnotation());
+    return t.objectTypeProperty(
+      t.identifier(node.key.name),
+      annotation || t.anyTypeAnnotation()
+    );
+  }
+
+  function getClassMethodAnnotation (path: NodePath): ?TypeAnnotation {
+    const {node} = path;
+    if (node.kind === 'get') {
+      return t.objectTypeProperty(
+        t.identifier(node.key.name),
+        node.savedTypeAnnotation || node.returnType || node.typeAnnotation || t.anyTypeAnnotation()
+      );
+    }
+    else if (node.kind === 'set') {
+      return t.objectTypeProperty(
+        t.identifier(node.key.name),
+        node.params.map(param => param.savedTypeAnnotation || param.typeAnnotation).shift() || t.anyTypeAnnotation()
+      );
+    }
+    else {
+      return t.objectTypeProperty(
+        t.identifier(node.key.name),
+        t.functionTypeAnnotation(
+          null,
+          node.params.map(param => param.savedTypeAnnotation || param.typeAnnotation),
+          null,
+          node.savedTypeAnnotation || node.returnType || node.typeAnnotation || t.anyTypeAnnotation()
+        )
+      );
     }
   }
 
@@ -1263,7 +1446,7 @@ export default function ({types: t, template}): Object {
   function getArrayExpressionAnnotation (path: NodePath): TypeAnnotation {
     return t.genericTypeAnnotation(
       t.identifier('Array'),
-      t.typeParameters(path.get('elements').map(getAnnotation))
+      t.typeParameterDeclaration(path.get('elements').map(getAnnotation))
     );
   }
 
@@ -1273,17 +1456,8 @@ export default function ({types: t, template}): Object {
         if (property.computed) {
           return;
         }
-        switch (property.type) {
-          case 'ObjectMethod':
-            return t.objectTypeProperty(
-              t.identifier(property.node.key.name),
-              getObjectMethodAnnotation(property)
-            );
-          case 'ObjectProperty':
-            return t.objectTypeProperty(
-              t.identifier(property.node.key.name),
-              property.node.value.savedTypeAnnotation || property.node.value.typeAnnotation || t.anyTypeAnnotation()
-            );
+        else {
+          return getAnnotation(property);
         }
       }).filter(identity)
     );
@@ -1294,29 +1468,61 @@ export default function ({types: t, template}): Object {
     if (path.node.computed) {
       return getComputedMemberExpressionAnnotation(path);
     }
-    const object = path.get('object');
-    const {node: id} = path.get('property');
-    const {name} = id;
-    let annotation = getAnnotation(object);
-    if (annotation.type === 'NullableTypeAnnotation') {
-      annotation = annotation.typeAnnotation;
-    }
-    if (annotation.type === 'GenericTypeAnnotation') {
-      const target = path.scope.getBinding(annotation.id.name);
-      if (target) {
-        annotation = getAnnotation(target.path);
+    const stack = [];
+    let target = path;
+    while (target.isMemberExpression()) {
+      stack.push(target);
+      if (target.node.computed) {
+        break;
       }
+      target = target.get('object');
     }
-    switch (annotation.type) {
-      case 'ObjectTypeAnnotation':
-        for (let {key, value} of annotation.properties) {
-          if (key.name === id.name) {
-            return value;
+    const objectAnnotation = stack.reduceRight((last, target) => {
+      let annotation = last;
+      if (annotation == null) {
+        if (stack.length === 1) {
+          annotation = getAnnotation(target.get('object'));
+        }
+        else {
+          return getAnnotation(target);
+        }
+      }
+
+      switch (annotation.type) {
+        case 'AnyTypeAnnotation':
+          return annotation;
+        case 'NullableTypeAnnotation':
+        case 'TypeAnnotation':
+          annotation = annotation.typeAnnotation;
+      }
+
+      if (annotation.type === 'GenericTypeAnnotation') {
+        const typeChecker = getTypeChecker(annotation.id, path.scope);
+        if (typeChecker) {
+          annotation = getAnnotation(typeChecker);
+        }
+        else {
+          const binding = path.scope.getBinding(annotation.id.name);
+          if (binding) {
+            annotation = getAnnotation(binding.path);
           }
         }
-        break;
-    }
-    return path.getTypeAnnotation();
+      }
+      switch (annotation.type) {
+        case 'AnyTypeAnnotation':
+          return annotation;
+        case 'ObjectTypeAnnotation':
+          const id = target.get('property').node;
+          for (let {key, value} of annotation.properties || []) {
+            if (key.name === id.name) {
+              return value;
+            }
+          }
+      }
+      return t.anyTypeAnnotation();
+    }, null);
+
+    return objectAnnotation || path.getTypeAnnotation();
   }
 
   function getComputedMemberExpressionAnnotation (path: NodePath): TypeAnnotation {
@@ -1341,12 +1547,12 @@ export default function ({types: t, template}): Object {
         }
         else if (typeof value === 'number') {
           if (!objectAnnotation.types[value]) {
-            throw path.buildCodeFrameError(`Invalid computed member expression for tuple: ` + humanReadableType(objectAnnotation, path.scope));
+            throw path.buildCodeFrameError(`Invalid computed member expression for tuple: ` + humanReadableType(objectAnnotation));
           }
           return objectAnnotation.types[value];
         }
         else {
-          throw path.buildCodeFrameError(`Invalid computed member expression for tuple: ` + humanReadableType(objectAnnotation, path.scope));
+          throw path.buildCodeFrameError(`Invalid computed member expression for tuple: ` + humanReadableType(objectAnnotation));
         }
         break;
     }
@@ -1838,6 +2044,27 @@ export default function ({types: t, template}): Object {
     }
   }
 
+  function getTypeChecker (id: Identifier|QualifiedTypeIdentifier, scope: Scope): NodePath|false {
+    const binding = scope.getBinding(id.name);
+    if (binding === undefined) {
+      return false;
+    }
+    const {path} = binding;
+    if (path == null) {
+      return false;
+    }
+    else if (path.type === 'TypeAlias') {
+      return path;
+    }
+    else if (path.type === 'VariableDeclaration' && path.node.isTypeChecker) {
+      return path.get('declarations')[0];
+    }
+    else if (path.isImportSpecifier() && path.parent.importKind === 'type') {
+      return path;
+    }
+    return false;
+  }
+
   function isTypeChecker (id: Identifier|QualifiedTypeIdentifier, scope: Scope): boolean {
     const binding = scope.getBinding(id.name);
     if (binding === undefined) {
@@ -1945,7 +2172,7 @@ export default function ({types: t, template}): Object {
     const {left: id, right: value} = node;
     const ok = staticCheckAnnotation(path.get('right'), id.typeAnnotation);
     if (ok === false) {
-      throw path.buildCodeFrameError(`Invalid default value for argument "${id.name}", expected ${humanReadableType(id.typeAnnotation, scope)}.`);
+      throw path.buildCodeFrameError(`Invalid default value for argument "${id.name}", expected ${humanReadableType(id.typeAnnotation)}.`);
     }
     return createParamGuard(path.get('left'));
   }
@@ -1956,7 +2183,7 @@ export default function ({types: t, template}): Object {
     id.hasBeenTypeChecked = true;
     node.savedTypeAnnotation = node.typeAnnotation;
     if (!isStrictlyArrayAnnotation(node.typeAnnotation)) {
-      throw path.buildCodeFrameError(`Invalid type annotation for rest argument "${id.name}", expected an Array, got: ${humanReadableType(node.typeAnnotation, scope)}.`);
+      throw path.buildCodeFrameError(`Invalid type annotation for rest argument "${id.name}", expected an Array, got: ${humanReadableType(node.typeAnnotation)}.`);
     }
     let check = checkAnnotation(id, node.typeAnnotation, scope);
     if (!check) {
@@ -1976,10 +2203,10 @@ export default function ({types: t, template}): Object {
     });
   }
 
-  function returnTypeErrorMessage (path: NodePath, fn: Node, id: ?Identifier): Node {
+  function returnTypeErrorMessage (path: NodePath, fn: Node, id: ?Identifier|Literal): Node {
     const {node, scope} = path;
     const name = fn.id ? fn.id.name : '';
-    const message = `Function ${name ? `"${name}" ` : ''}return value violates contract, expected ${humanReadableType(fn.returnType, scope)} got `;
+    const message = `Function ${name ? `"${name}" ` : ''}return value violates contract, expected ${humanReadableType(fn.returnType)} got `;
 
     return t.binaryExpression(
       '+',
@@ -1990,7 +2217,7 @@ export default function ({types: t, template}): Object {
 
   function paramTypeErrorMessage (node: Node, scope: Scope, typeAnnotation: TypeAnnotation = node.typeAnnotation): Node {
     const name = node.name;
-    const message = `Value of ${node.optional ? 'optional ' : ''}argument "${name}" violates contract, expected ${humanReadableType(typeAnnotation, scope)} got `;
+    const message = `Value of ${node.optional ? 'optional ' : ''}argument "${name}" violates contract, expected ${humanReadableType(typeAnnotation)} got `;
 
     return t.binaryExpression(
       '+',
@@ -2000,13 +2227,23 @@ export default function ({types: t, template}): Object {
   }
 
   function varTypeErrorMessage (node: Node, scope: Scope, annotation?: TypeAnnotation): Node {
-    const name = node.name;
-    const message = `Value of variable "${name}" violates contract, expected ${humanReadableType(annotation || node.typeAnnotation, scope)} got `;
-    return t.binaryExpression(
-      '+',
-      t.stringLiteral(message),
-      readableName({input: node})
-    );
+    if (node.type === 'Identifier') {
+      const name = node.name;
+      const message = `Value of variable "${name}" violates contract, expected ${humanReadableType(annotation || node.typeAnnotation)} got `;
+      return t.binaryExpression(
+        '+',
+        t.stringLiteral(message),
+        readableName({input: node})
+      );
+    }
+    else {
+      const message = `Value of "${generate(node).code}" violates contract, expected ${humanReadableType(annotation || node.typeAnnotation)} got `;
+      return t.binaryExpression(
+        '+',
+        t.stringLiteral(message),
+        readableName({input: node})
+      );
+    }
   }
 
   /**
