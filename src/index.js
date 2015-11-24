@@ -46,10 +46,6 @@ type NodePath = {
  * # Typecheck Transformer
  */
 export default function ({types: t, template}): Object {
-  // constants used when statically verifying types
-  const TYPE_INVALID = 0;
-  const TYPE_VALID = 1;
-  const TYPE_UNKNOWN = 2;
 
   /**
    * Binary Operators that can only produce boolean results.
@@ -330,7 +326,23 @@ export default function ({types: t, template}): Object {
         if (path.parent.type === 'Program' || path.parent.type === 'BlockStatement') {
           path.insertAfter(check);
         }
-        else if (path.parent.type === 'ExportNamedDeclaration' || path.parent.type === 'ExportDefaultDeclaration' || path.parent.type === 'ExportAllDeclaration' || path.parentPath.isForXStatement()) {
+        else if (path.parentPath.isForXStatement() || path.parentPath.isForStatement() || path.parentPath.isForInStatement()) {
+          let body = path.parentPath.get('body');
+          if (body.type !== 'BlockStatement') {
+            const block = t.blockStatement([body.node]);
+            body.replaceWith(block);
+            body = path.parentPath.get('body');
+          }
+          const children = body.get('body');
+          if (children.length === 0) {
+            body.replaceWith(check);
+          }
+          else {
+            children[0].insertBefore(check);
+          }
+
+        }
+        else if (path.parent.type === 'ExportNamedDeclaration' || path.parent.type === 'ExportDefaultDeclaration' || path.parent.type === 'ExportAllDeclaration') {
           path.parentPath.insertAfter(check);
         }
         else {
@@ -393,7 +405,8 @@ export default function ({types: t, template}): Object {
       }
       id.hasBeenTypeChecked = true;
       if (check) {
-        path.getStatementParent().insertAfter(guard({
+        const parent = path.getStatementParent();
+        parent.insertAfter(guard({
           check,
           message: varTypeErrorMessage(id, scope)
         }));
@@ -1157,7 +1170,7 @@ export default function ({types: t, template}): Object {
         throw e;
       }
       else {
-        console.log(e.stack);
+        console.error(e.stack);
       }
     }
     while (annotation && annotation.type === 'TypeAnnotation') {
