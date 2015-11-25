@@ -1215,13 +1215,7 @@ export default function ({types: t, template}): Object {
           else if (isPolymorphicType(id, scope)) {
             return t.anyTypeAnnotation();
           }
-          try {
-            return path.getTypeAnnotation();
-          }
-          catch (e) {
-            console.log(e, node);
-          }
-          return t.anyTypeAnnotation();
+          return path.getTypeAnnotation();
         case 'StringLiteral':
         case 'NumericLiteral':
         case 'BooleanLiteral':
