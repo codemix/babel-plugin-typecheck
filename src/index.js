@@ -1341,7 +1341,7 @@ export default function ({types: t, template}): Object {
   }
 
   function getClassDeclarationAnnotation (path: NodePath): ?TypeAnnotation {
-    const body = path.get('body').get('body').map(getAnnotation);
+    const body = path.get('body').get('body').map(getAnnotation).filter(annotation => annotation && annotation.type !== 'AnyTypeAnnotation');
     return t.objectTypeAnnotation(body);
   }
 
@@ -1353,33 +1353,39 @@ export default function ({types: t, template}): Object {
 
   function getClassPropertyAnnotation (path: NodePath): ?TypeAnnotation {
     const {node} = path;
+    if (node.computed) {
+      return;
+    }
     const annotation = node.typeAnnotation || (node.value ? node.value.savedTypeAnnotation || node.value.typeAnnotation : t.anyTypeAnnotation());
     return t.objectTypeProperty(
-      t.identifier(node.key.name),
+      node.key,
       annotation || t.anyTypeAnnotation()
     );
   }
 
   function getClassMethodAnnotation (path: NodePath): ?TypeAnnotation {
     const {node} = path;
+    if (node.computed) {
+      return;
+    }
     if (node.kind === 'get') {
       return t.objectTypeProperty(
-        t.identifier(node.key.name),
+        node.key,
         node.savedTypeAnnotation || node.returnType || node.typeAnnotation || t.anyTypeAnnotation()
       );
     }
     else if (node.kind === 'set') {
       return t.objectTypeProperty(
-        t.identifier(node.key.name),
+        node.key,
         node.params.map(param => param.savedTypeAnnotation || param.typeAnnotation).shift() || t.anyTypeAnnotation()
       );
     }
     else {
       return t.objectTypeProperty(
-        t.identifier(node.key.name),
+        node.key,
         t.functionTypeAnnotation(
           null,
-          node.params.map(param => param.savedTypeAnnotation || param.typeAnnotation),
+          node.params.map(param => param.savedTypeAnnotation || param.typeAnnotation || t.anyTypeAnnotation()),
           null,
           node.savedTypeAnnotation || node.returnType || node.typeAnnotation || t.anyTypeAnnotation()
         )
@@ -2226,10 +2232,10 @@ export default function ({types: t, template}): Object {
     );
   }
 
-  function varTypeErrorMessage (node: Node, scope: Scope, annotation?: TypeAnnotation): Node {
+  function varTypeErrorMessage (node: Node, scope: Scope, annotation?: TypeAnnotation = node.typeAnnotation): Node {
     if (node.type === 'Identifier') {
       const name = node.name;
-      const message = `Value of variable "${name}" violates contract, expected ${humanReadableType(annotation || node.typeAnnotation)} got `;
+      const message = `Value of variable "${name}" violates contract, expected ${humanReadableType(annotation)} got `;
       return t.binaryExpression(
         '+',
         t.stringLiteral(message),
@@ -2237,7 +2243,7 @@ export default function ({types: t, template}): Object {
       );
     }
     else {
-      const message = `Value of "${generate(node).code}" violates contract, expected ${humanReadableType(annotation || node.typeAnnotation)} got `;
+      const message = `Value of "${generate(node).code}" violates contract, expected ${humanReadableType(annotation)} got `;
       return t.binaryExpression(
         '+',
         t.stringLiteral(message),

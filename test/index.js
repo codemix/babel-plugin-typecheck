@@ -12,6 +12,7 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('bug-xxx-method-params');
   ok('bug-59-type-annotation-in-loop', 'foo');
   ok('object-method', 'bob', 'bob@example.com');
   failStatic('bad-object-method', 'bob', 'bob@example.com');
