@@ -12,6 +12,23 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('object-properties-function', 'bob', 'bob@example.com');
+  ok('bug-62-default-params');
+  ok('bug-62-default-params', {option1: 'foo'});
+  ok('bug-62-default-params', {option1: 'foo', option2: false});
+  ok('bug-62-default-params', {option1: 'foo', option2: true, option3: 123});
+  failWith(`Value of optional argument "options" violates contract, expected { option1?: string;
+    option2?: bool;
+    option3?: number;
+  } got Object`, 'bug-62-default-params', {option1: true});
+  failWith(`Value of optional argument "options" violates contract, expected { option1?: string;
+    option2?: bool;
+    option3?: number;
+  } got Object`, 'bug-62-default-params', {option1: 'foo', option2: 'nope'});
+  failWith(`Value of optional argument "options" violates contract, expected { option1?: string;
+    option2?: bool;
+    option3?: number;
+  } got Object`, 'bug-62-default-params', {option1: 'foo', option2: true, option3: 'nope'});
   ok('bug-xxx-method-params');
   ok('bug-59-type-annotation-in-loop', 'foo');
   ok('object-method', 'bob', 'bob@example.com');

@@ -675,7 +675,7 @@ export default function ({types: t, template}): Object {
       for (let bprop of b.properties) {
         if (bprop.key.name === aprop.key.name) {
           const result = compareAnnotations(aprop.value, bprop.value);
-          if (result === false) {
+          if (result === false && !(aprop.optional && (bprop.optional || maybeNullableAnnotation(bprop.value) === true))) {
             return false;
           }
           else {
@@ -684,7 +684,7 @@ export default function ({types: t, template}): Object {
           break;
         }
       }
-      if (found === false) {
+      if (found === false && !aprop.optional) {
         return false;
       }
       allTrue = allTrue && found === true;
@@ -1215,7 +1215,13 @@ export default function ({types: t, template}): Object {
           else if (isPolymorphicType(id, scope)) {
             return t.anyTypeAnnotation();
           }
-          return path.getTypeAnnotation();
+          try {
+            return path.getTypeAnnotation();
+          }
+          catch (e) {
+            console.log(e, node);
+          }
+          return t.anyTypeAnnotation();
         case 'StringLiteral':
         case 'NumericLiteral':
         case 'BooleanLiteral':
@@ -1288,9 +1294,23 @@ export default function ({types: t, template}): Object {
 
   function getObjectPropertyAnnotation (path: NodePath): ?TypeAnnotation {
     const {node} = path;
-    const annotation = node.typeAnnotation || (node.value ? node.value.savedTypeAnnotation || node.value.typeAnnotation : t.anyTypeAnnotation());
+    let annotation = node.typeAnnotation || node.savedTypeAnnotation;
+    if (!annotation) {
+      if (node.value) {
+        const value = path.get('value');
+        if (value.isLiteral()) {
+          annotation = value.getTypeAnnotation();
+        }
+        else {
+          annotation = value.node.typeAnnotation || value.node.savedTypeAnnotation || t.anyTypeAnnotation();
+        }
+      }
+      else {
+        annotation = t.anyTypeAnnotation();
+      }
+    }
     return t.objectTypeProperty(
-      t.identifier(node.key.name),
+      node.key,
       annotation || t.anyTypeAnnotation()
     );
   }
