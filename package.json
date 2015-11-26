@@ -1,6 +1,6 @@
 {
   "name": "babel-plugin-typecheck",
-  "version": "3.2.1",
+  "version": "3.3.0",
   "description": "Transforms flow type annotations into runtime type checks.",
   "main": "lib/index.js",
   "scripts": {
@@ -31,10 +31,12 @@
     "url": "https://github.com/codemix/babel-plugin-typecheck/issues"
   },
   "homepage": "https://github.com/codemix/babel-plugin-typecheck",
+  "dependencies": {
+    "babel-generator": "^6.1.2"
+  },
   "devDependencies": {
     "babel-cli": "^6.1.0",
     "babel-core": "^6.1.0",
-    "babel-generator": "^6.1.2",
     "babel-plugin-syntax-flow": "^6.0.14",
     "babel-plugin-syntax-class-properties": "^6.1.18",
     "babel-plugin-transform-es2015-modules-commonjs": "^6.1.3",
