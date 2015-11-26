@@ -12,6 +12,10 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('generators', 'foo');
+  failWith(`Function "gen"  yielded an invalid value, expected number | string got boolean`, 'generators', false);
+  failStatic('bad-generators', 'foo');
+  failStatic('bad-generators-return', 'foo');
   ok('object-properties-function', 'bob', 'bob@example.com');
   ok('bug-62-default-params');
   ok('bug-62-default-params', {option1: 'foo'});
