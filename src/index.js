@@ -554,7 +554,6 @@ export default function ({types: t, template}): Object {
   }
 
   function compareAnnotations (a: TypeAnnotation, b: TypeAnnotation): ?boolean {
-
     if (a.type === 'TypeAnnotation') {
       a = a.typeAnnotation;
     }
@@ -604,7 +603,7 @@ export default function ({types: t, template}): Object {
       return a.value === b.value;
     }
     else {
-      return maybeStringAnnotation(b);
+      return maybeStringAnnotation(b) === false ? false : null;
     }
   }
 
@@ -613,7 +612,7 @@ export default function ({types: t, template}): Object {
       return a.value === b.value;
     }
     else {
-      return maybeBooleanAnnotation(b);
+      return maybeBooleanAnnotation(b) === false ? false : null;
     }
   }
 
@@ -622,7 +621,7 @@ export default function ({types: t, template}): Object {
       return a.value === b.value;
     }
     else {
-      return maybeNumberAnnotation(b);
+      return maybeNumberAnnotation(b) === false ? false : null;
     }
   }
 
@@ -1048,8 +1047,13 @@ export default function ({types: t, template}): Object {
   }
 
   function checkObject ({input, properties, scope}): Node {
+    if (input.type === 'ObjectPattern') {
+      return checkObjectPattern({input, properties, scope});
+    }
     const check = properties.reduce((expr, prop, index) => {
-      const target = t.memberExpression(input, prop.key);
+      let target;
+
+      target = t.memberExpression(input, prop.key);
       let check = checkAnnotation(target, prop.value, scope);
       if (check) {
         if (prop.optional) {
@@ -1071,6 +1075,34 @@ export default function ({types: t, template}): Object {
     }, checkIsObject({input}));
 
     return check;
+  }
+
+  function checkObjectPattern ({input, properties, scope}): ?Node {
+    const propNames = properties.reduce((names, prop) => {
+      names[prop.key.name] = prop;
+      return names;
+    }, {});
+    const propChecks = {};
+    for (let item of input.properties) {
+      let {key, value: id} = item;
+      let prop = propNames[key.name];
+      if (!prop) {
+        continue;
+      }
+      const check = checkAnnotation(id, prop.value, scope);
+      if (check) {
+        propChecks[key.name] = check;
+      }
+    }
+    return Object.keys(propChecks).reduce((last, name) => {
+      const check = propChecks[name];
+      if (last === null) {
+        return check;
+      }
+      else {
+        return t.logicalExpression('&&', last, check);
+      }
+    }, null);
   }
 
   function createTypeAliasChecks (path: NodePath): Node {
@@ -1198,7 +1230,6 @@ export default function ({types: t, template}): Object {
           return staticChecks.instanceof({path, type: createTypeExpression(annotation.id)});
         }
     }
-
     return compareAnnotations(annotation, other);
   }
 
@@ -1248,9 +1279,13 @@ export default function ({types: t, template}): Object {
     else if (!node.typeAnnotation && !node.savedTypeAnnotation && !node.returnType) {
       switch (path.type) {
         case 'Identifier':
-          const id = scope.getBindingIdentifier(node.name);
-          if (!id) {
+          const binding = scope.getBinding(node.name);
+          if (!binding || !binding.identifier) {
             break;
+          }
+          const id = binding.identifier;
+          if (binding.path.type === 'ObjectPattern') {
+            return getObjectPatternAnnotation(binding.path, node.name);
           }
           if (id.savedTypeAnnotation) {
             return id.savedTypeAnnotation;
@@ -1264,7 +1299,7 @@ export default function ({types: t, template}): Object {
           else if (isPolymorphicType(id, scope)) {
             return t.anyTypeAnnotation();
           }
-          return path.getTypeAnnotation();
+          return binding.path.getTypeAnnotation();
         case 'StringLiteral':
         case 'NumericLiteral':
         case 'BooleanLiteral':
@@ -1333,6 +1368,54 @@ export default function ({types: t, template}): Object {
     }
     annotation.value = path.node.value;
     return annotation;
+  }
+
+  function getObjectPatternAnnotation (path: NodePath, name: string): ?TypeAnnotation {
+    let annotation = keyByName(getAnnotation(path), name);
+    let found;
+    if (!path.node.properties) {
+      return;
+    }
+    for (let prop of path.get('properties')) {
+      if (prop.node.value && prop.node.value.name === name) {
+        found = prop.get('key');
+        break;
+      }
+      else if (prop.node.key.type === 'Identifier' && prop.node.key.name === name) {
+        found = prop.get('key');
+        break;
+      }
+    }
+    if (!annotation || !found) {
+      return;
+    }
+    if (found.type === 'Identifier') {
+      annotation.value.authoritative = false;
+      return annotation.value;
+    }
+  }
+
+
+  function keyByName (node: Node, name: string): ?Node {
+    if (!node.properties) {
+      return;
+    }
+    for (let prop of node.properties) {
+      if (prop.key && prop.key.name === name) {
+        return prop;
+      }
+    }
+  }
+
+  function valueByName (node: Node, name: string): ?Node {
+    if (!node.properties) {
+      return;
+    }
+    for (let prop of node.properties) {
+      if (prop.value && prop.value.name === name) {
+        return prop;
+      }
+    }
   }
 
   function getObjectPropertyAnnotation (path: NodePath): ?TypeAnnotation {
@@ -2225,6 +2308,9 @@ export default function ({types: t, template}): Object {
 
     node.hasBeenTypeChecked = true;
     node.savedTypeAnnotation = node.typeAnnotation;
+    if (node.type === 'ObjectPattern') {
+      return;
+    }
     let check = checkAnnotation(node, node.typeAnnotation, scope);
     if (!check) {
       return;

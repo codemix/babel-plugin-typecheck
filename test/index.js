@@ -12,6 +12,9 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('indexers', foo => null);
+  ok('object-pattern', {a: 'foo', b: 34});
+  ok('object-pattern-complex', {a: 'foo', b: 34, d: {e: 'bar', g: false, a: 123}});
   ok('generators', 'foo');
   failWith(`Function "gen"  yielded an invalid value, expected number | string got boolean`, 'generators', false);
   failStatic('bad-generators', 'foo');
@@ -35,6 +38,7 @@ describe('Typecheck', function () {
   } got Object`, 'bug-62-default-params', {option1: 'foo', option2: true, option3: 'nope'});
   ok('bug-xxx-method-params');
   ok('bug-59-type-annotation-in-loop', 'foo');
+  ok('bug-59-type-annotation-in-loop-again', 'foo');
   ok('object-method', 'bob', 'bob@example.com');
   failStatic('bad-object-method', 'bob', 'bob@example.com');
   failStatic('bad-object-method-arrow', 'bob', 'bob@example.com');
