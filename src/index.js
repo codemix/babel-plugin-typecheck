@@ -224,15 +224,15 @@ export default function ({types: t, template}): Object {
     },
 
     YieldExpression (path: NodePath): void {
-      if (maybeSkip(path)) {
-        return;
-      }
-      const {node, parent, scope} = path;
       const fn = path.getFunctionParent();
-      if (!fn || !isGeneratorAnnotation(fn.node.returnType)) {
+      if (!fn) {
         return;
       }
       fn.yieldCount++;
+      if (!isGeneratorAnnotation(fn.node.returnType) || maybeSkip(path)) {
+        return;
+      }
+      const {node, parent, scope} = path;
       let annotation = fn.node.returnType;
       if (annotation.type === 'NullableTypeAnnotation' || annotation.type === 'TypeAnnotation') {
         annotation = annotation.typeAnnotation;
@@ -240,9 +240,11 @@ export default function ({types: t, template}): Object {
       if (!annotation.typeParameters || annotation.typeParameters.params.length === 0) {
         return;
       }
+
       const yieldType = annotation.typeParameters.params[0];
+      const nextType = annotation.typeParameters.params[2];
       const ok = staticCheckAnnotation(path.get("argument"), yieldType);
-      if (ok === true) {
+      if (ok === true && !nextType) {
         return;
       }
       else if (ok === false) {
@@ -251,17 +253,47 @@ export default function ({types: t, template}): Object {
       const input = node.argument || t.identifier('undefined');
       const id = scope.generateUidIdentifierBasedOnNode(input);
       const check = checkAnnotation(id, yieldType, scope);
-      if (!check) {
-        return;
+      if (check) {
+        const yielder = t.yieldExpression(guardInline({
+          id,
+          input,
+          check,
+          message: yieldTypeErrorMessage(path, fn.node, id)
+        }));
+        yielder.hasBeenTypeChecked = true;
+        if (nextType) {
+          const id = scope.generateUidIdentifierBasedOnNode(yielder);
+          const check = checkAnnotation(id, nextType, scope);
+          if (check) {
+            path.replaceWith(guardInline({
+              id,
+              input: yielder,
+              check,
+              message: yieldNextTypeErrorMessage(path, fn.node, id)
+            }));
+          }
+          else {
+            path.replaceWith(yielder);
+          }
+        }
+        else {
+          path.replaceWith(yielder);
+        }
       }
-      const yielder = t.yieldExpression(guardInline({
-        id,
-        input,
-        check,
-        message: yieldTypeErrorMessage(path, fn.node, id)
-      }));
-      yielder.hasBeenTypeChecked = true;
-      path.replaceWith(yielder);
+      else if (nextType) {
+        const yielder = t.yieldExpression(node.argument);
+        yielder.hasBeenTypeChecked = true;
+        const id = scope.generateUidIdentifierBasedOnNode(yielder);
+        const check = checkAnnotation(id, nextType, scope);
+        if (check) {
+          path.replaceWith(guardInline({
+            id,
+            input: yielder,
+            check,
+            message: yieldNextTypeErrorMessage(path, fn.node, id)
+          }));
+        }
+      }
     },
 
 
@@ -2395,6 +2427,24 @@ export default function ({types: t, template}): Object {
       annotation = annotation.typeParameters.params[0];
     }
     const message = `Function ${name ? `"${name}" ` : ''} yielded an invalid value, expected ${humanReadableType(annotation)} got `;
+
+    return t.binaryExpression(
+      '+',
+      t.stringLiteral(message),
+      node.argument ? readableName({input: id || node.argument}) : t.stringLiteral('undefined')
+    );
+  }
+  function yieldNextTypeErrorMessage (path: NodePath, fn: Node, id: ?Identifier|Literal): Node {
+    const {node, scope} = path;
+    const name = fn.id ? fn.id.name : '';
+    let annotation = fn.returnType;
+    if (annotation.type === 'TypeAnnotation') {
+      annotation = annotation.typeAnnotation;
+    }
+    if (fn.generator && isGeneratorAnnotation(annotation) && annotation.typeParameters && annotation.typeParameters.params.length > 2) {
+      annotation = annotation.typeParameters.params[2];
+    }
+    const message = `Generator ${name ? `"${name}" ` : ''}received an invalid next value, expected ${humanReadableType(annotation)} got `;
 
     return t.binaryExpression(
       '+',

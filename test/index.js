@@ -18,6 +18,9 @@ describe('Typecheck', function () {
   ok('object-pattern-complex', {a: 'foo', b: 34, d: {e: 'bar', g: false, a: 123}});
   ok('generators', 'foo');
   failWith(`Function "gen"  yielded an invalid value, expected number | string got boolean`, 'generators', false);
+  ok('generators-with-next', 12);
+  failWith(`Generator "gen" received an invalid next value, expected number got string`, 'generators-with-next', 'foo');
+  failWith(`Generator "gen" received an invalid next value, expected number got boolean`, 'generators-with-next', false);
   failStatic('bad-generators', 'foo');
   failStatic('bad-generators-return', 'foo');
   ok('object-properties-function', 'bob', 'bob@example.com');
