@@ -12,6 +12,7 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('bug-68-return-string-literal');
   ok('indexers', foo => null);
   ok('object-pattern', {a: 'foo', b: 34});
   ok('object-pattern-complex', {a: 'foo', b: 34, d: {e: 'bar', g: false, a: 123}});

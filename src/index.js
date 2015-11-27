@@ -266,15 +266,15 @@ export default function ({types: t, template}): Object {
 
 
     ReturnStatement (path: NodePath): void {
-      if (maybeSkip(path)) {
-        return;
-      }
-      const {node, parent, scope} = path;
       const fn = path.getFunctionParent();
       if (!fn) {
         return;
       }
       fn.node.returnCount++;
+      if (maybeSkip(path)) {
+        return;
+      }
+      const {node, parent, scope} = path;
       const {returnType} = fn.node;
       if (!returnType) {
         return;
