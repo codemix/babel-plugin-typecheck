@@ -67,6 +67,7 @@ export default function ({types: t, template}): Object {
   const checkIsMap: (() => Node) = expression(`input instanceof Map`);
   const checkIsSet: (() => Node) = expression(`input instanceof Set`);
   const checkIsGenerator: (() => Node) = expression(`typeof input === 'function' && input.generator`);
+  const checkIsIterable: (() => Node) = expression(`input && typeof input[Symbol.iterator] === 'function'`);
   const checkIsObject: (() => Node) = expression(`input != null && typeof input === 'object'`);
   const checkNotNull: (() => Node) = expression(`input != null`);
   const checkEquals: (() => Node) = expression(`input === expected`);
@@ -491,6 +492,43 @@ export default function ({types: t, template}): Object {
         return;
       }
       id.savedTypeAnnotation = path.getTypeAnnotation();
+    },
+
+    ForOfStatement (path: NodePath): void {
+      const left: NodePath = path.get('left');
+      const right: NodePath = path.get('right');
+      const rightAnnotation: TypeAnnotation = getAnnotation(right);
+      const leftAnnotation: TypeAnnotation = left.isVariableDeclaration() ? getAnnotation(left.get('declarations')[0].get('id')) : getAnnotation(left);
+      const ok: ?boolean = maybeIterableAnnotation(rightAnnotation);
+      if (ok === false) {
+        throw path.buildCodeFrameError(`Cannot iterate ${humanReadableType(rightAnnotation)}`);
+      }
+      else if (ok !== true) {
+        let id: ?Identifier;
+        if (right.isIdentifier()) {
+          id = right.node;
+        }
+        else {
+          id = path.scope.generateUidIdentifierBasedOnNode(right.node);
+          path.scope.push({id});
+          const replacement: Node = t.expressionStatement(t.assignmentExpression('=', id, right.node));
+          path.insertBefore(replacement);
+          right.replaceWith(id);
+        }
+        path.insertBefore(guard({
+          check: checks.iterable({input: id}),
+          message: t.stringLiteral(`Expected ${generate(right.node).code} to be iterable, got ${readableName({input: id})}`)
+        }));
+      }
+
+      if (rightAnnotation.type !== 'GenericTypeAnnotation' || rightAnnotation.id.name !== 'Iterable' || !rightAnnotation.typeParameters || !rightAnnotation.typeParameters.params.length) {
+        return;
+      }
+
+      const annotation: TypeAnnotation = rightAnnotation.typeParameters.params[0];
+      if (compareAnnotations(annotation, leftAnnotation) === false) {
+        throw path.buildCodeFrameError(`Invalid iterator type, expected ${humanReadableType(annotation)} got ${humanReadableType(leftAnnotation)}`);
+      }
     }
   };
 
@@ -554,6 +592,7 @@ export default function ({types: t, template}): Object {
       map: checkMap,
       set: checkSet,
       generator: checkGenerator,
+      iterable: checkIterable,
       tuple: checkTuple,
       object: checkObject,
       nullable: checkNullable,
@@ -979,6 +1018,10 @@ export default function ({types: t, template}): Object {
     return checkIsGenerator({input});
   }
 
+  function checkIterable ({input, types, scope}): Node {
+    return checkIsIterable({input});
+  }
+
   function checkArray ({input, types, scope}): Node {
     if (!types || types.length === 0) {
       return checkIsArray({input});
@@ -1184,6 +1227,9 @@ export default function ({types: t, template}): Object {
         }
         else if (annotation.id.name === 'Generator' && !scope.hasBinding('Generator')) {
           return checks.generator({input, types: annotation.typeParameters ? annotation.typeParameters.params : [], scope});
+        }
+        else if (annotation.id.name === 'Iterable' && !scope.hasBinding('Iterable')) {
+          return checks.iterable({input, types: annotation.typeParameters ? annotation.typeParameters.params : [], scope});
         }
         else if (annotation.id.name === 'Map' && !scope.hasBinding('Map')) {
           return checks.map({input, types: annotation.typeParameters ? annotation.typeParameters.params : [], scope});
@@ -2178,6 +2224,49 @@ export default function ({types: t, template}): Object {
         return null;
       default:
         return false;
+    }
+  }
+
+ /**
+   * Returns `true` if the annotation is compatible with an iterable,
+   * `false` if it definitely isn't, or `null` if we're not sure.
+   */
+  function maybeIterableAnnotation (annotation: TypeAnnotation): ?boolean {
+    switch (annotation.type) {
+      case 'TypeAnnotation':
+      case 'FunctonTypeParam':
+      case 'NullableTypeAnnotation':
+        return maybeIterableAnnotation(annotation.typeAnnotation);
+      case 'TupleTypeAnnotation':
+      case 'ArrayTypeAnnotation':
+        return true;
+      case 'GenericTypeAnnotation':
+        return annotation.id.name === 'Iterable' ? true : null;
+      case 'UnionTypeAnnotation':
+        let falseCount = 0;
+        for (let type of annotation.types) {
+          const result = maybeIterableAnnotation(type);
+          if (result === true) {
+            return true;
+          }
+          else if (result === false) {
+            falseCount++;
+          }
+        }
+        if (falseCount === annotation.types.length) {
+          return false;
+        }
+        else {
+          return null;
+        }
+      case 'BooleanTypeAnnotation':
+      case 'BooleanLiteralTypeAnnotation':
+      case 'NumericLiteralTypeAnnotation':
+      case 'NumberTypeAnnotation':
+      case 'VoidTypeAnnotation':
+        return false;
+      default:
+        return null;
     }
   }
 

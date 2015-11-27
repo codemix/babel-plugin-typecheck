@@ -12,6 +12,11 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('iterable', [1, 2, 3]);
+  failWith(`Value of variable "item" violates contract, expected number got string`, 'iterable', ['a', 'b', 'c']);
+  failStatic('bad-iterable', [1, 2, 3]);
+  failStatic('bad-iterable-type', 123);
+
   ok('bug-68-return-string-literal');
   ok('indexers', foo => null);
   ok('object-pattern', {a: 'foo', b: 34});
