@@ -12,11 +12,20 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('iterable', [1, 2, 3]);
+  failWith(`Value of variable "item" violates contract, expected number got string`, 'iterable', ['a', 'b', 'c']);
+  failStatic('bad-iterable', [1, 2, 3]);
+  failStatic('bad-iterable-type', 123);
+
+  ok('bug-68-return-string-literal');
   ok('indexers', foo => null);
   ok('object-pattern', {a: 'foo', b: 34});
   ok('object-pattern-complex', {a: 'foo', b: 34, d: {e: 'bar', g: false, a: 123}});
   ok('generators', 'foo');
   failWith(`Function "gen"  yielded an invalid value, expected number | string got boolean`, 'generators', false);
+  ok('generators-with-next', 12);
+  failWith(`Generator "gen" received an invalid next value, expected number got string`, 'generators-with-next', 'foo');
+  failWith(`Generator "gen" received an invalid next value, expected number got boolean`, 'generators-with-next', false);
   failStatic('bad-generators', 'foo');
   failStatic('bad-generators-return', 'foo');
   ok('object-properties-function', 'bob', 'bob@example.com');
