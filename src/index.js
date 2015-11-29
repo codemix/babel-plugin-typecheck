@@ -495,6 +495,9 @@ export default function ({types: t, template}): Object {
     },
 
     ForOfStatement (path: NodePath): void {
+      if (maybeSkip(path)) {
+        return;
+      }
       const left: NodePath = path.get('left');
       const right: NodePath = path.get('right');
       const rightAnnotation: TypeAnnotation = getAnnotation(right);
@@ -520,6 +523,13 @@ export default function ({types: t, template}): Object {
           message: t.stringLiteral(`Expected ${generate(right.node).code} to be iterable, got ${readableName({input: id})}`)
         }));
       }
+
+      right.node.hasBeenTypeChecked = true;
+      right.hasBeenTypeChecked = true;
+      left.node.hasBeenTypeChecked = true;
+      left.hasBeenTypeChecked = true;
+      path.node.hasBeenTypeChecked = true;
+      path.hasBeenTypeChecked = true;
 
       if (rightAnnotation.type !== 'GenericTypeAnnotation' || rightAnnotation.id.name !== 'Iterable' || !rightAnnotation.typeParameters || !rightAnnotation.typeParameters.params.length) {
         return;
