@@ -12,6 +12,7 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('bug-71-cannot-iterate-void');
   ok('iterable', [1, 2, 3]);
   failWith(`Value of variable "item" violates contract, expected number got string`, 'iterable', ['a', 'b', 'c']);
   failStatic('bad-iterable', [1, 2, 3]);
