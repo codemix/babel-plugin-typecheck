@@ -102,6 +102,15 @@ export default function ({types: t, template}): Object {
     })(input)
   `);
 
+  const guardFn: (() => Node) = expression(`
+    function name (id) {
+      if (!check) {
+        throw new TypeError(message);
+      }
+      return id;
+    }
+  `);
+
   const readableName: (() => Node) = expression(`
     input === null ? 'null' : typeof input === 'object' && input.constructor ? input.constructor.name || '[Unknown Object]' : typeof input
   `);
@@ -202,6 +211,30 @@ export default function ({types: t, template}): Object {
         if (node.type === "ArrowFunctionExpression" && node.expression) {
           node.expression = false;
           node.body = t.blockStatement([t.returnStatement(node.body)]);
+        }
+        if (node.returnType) {
+          // Create a function which can verify this return type
+          let annotation = node.returnType;
+          if (annotation.type === 'TypeAnnotation') {
+            annotation = annotation.typeAnnotation;
+          }
+          if (isGeneratorAnnotation(annotation)) {
+            annotation = annotation.typeParameters && annotation.typeParameters.params.length > 1 ? annotation.typeParameters.params[1] : t.anyTypeAnnotation();
+          }
+          const name = scope.generateUidIdentifierBasedOnNode(path.node);
+          const id = scope.generateUidIdentifier('id');
+          const check = checkAnnotation(id, annotation, scope);
+          if (check) {
+            const returnGuard = guardFn({
+              id,
+              name,
+              check,
+              message: returnTypeErrorMessage(path, path.node, id)
+            });
+            returnGuard.hasBeenTypeChecked = true;
+            node.returnGuardName = name;
+            node.body.body.unshift(returnGuard);
+          }
         }
         node.body.body.unshift(...paramChecks);
         node.savedTypeAnnotation = node.returnType;
@@ -308,8 +341,8 @@ export default function ({types: t, template}): Object {
         return;
       }
       const {node, parent, scope} = path;
-      const {returnType} = fn.node;
-      if (!returnType) {
+      const {returnType, returnGuardName} = fn.node;
+      if (!returnType || !returnGuardName) {
         return;
       }
       if (!node.argument) {
@@ -332,18 +365,7 @@ export default function ({types: t, template}): Object {
       else if (ok === false) {
         throw path.buildCodeFrameError(`Function ${fn.node.id ? `"${fn.node.id.name}" ` : ''}returned an invalid type, expected ${humanReadableType(annotation)} got ${humanReadableType(getAnnotation(path.get('argument')))}`);
       }
-      const id = scope.generateUidIdentifierBasedOnNode(node.argument);
-      const input = node.argument;
-      const check = checkAnnotation(id, annotation, scope);
-      if (!check) {
-        return;
-      }
-      const returner = t.returnStatement(guardInline({
-        id,
-        input,
-        check,
-        message: returnTypeErrorMessage(path, fn.node, id)
-      }));
+      const returner = t.returnStatement(t.callExpression(fn.node.returnGuardName, [node.argument]));
       returner.hasBeenTypeChecked = true;
       path.replaceWith(returner);
     },
@@ -495,31 +517,38 @@ export default function ({types: t, template}): Object {
     },
 
     ForOfStatement (path: NodePath): void {
+      if (maybeSkip(path)) {
+        return;
+      }
       const left: NodePath = path.get('left');
       const right: NodePath = path.get('right');
       const rightAnnotation: TypeAnnotation = getAnnotation(right);
       const leftAnnotation: TypeAnnotation = left.isVariableDeclaration() ? getAnnotation(left.get('declarations')[0].get('id')) : getAnnotation(left);
-      const ok: ?boolean = maybeIterableAnnotation(rightAnnotation);
-      if (ok === false) {
-        throw path.buildCodeFrameError(`Cannot iterate ${humanReadableType(rightAnnotation)}`);
-      }
-      else if (ok !== true) {
-        let id: ?Identifier;
-        if (right.isIdentifier()) {
-          id = right.node;
+      if (rightAnnotation.type !== 'VoidTypeAnnotation') {
+        const ok: ?boolean = maybeIterableAnnotation(rightAnnotation);
+        if (ok === false) {
+          throw path.buildCodeFrameError(`Cannot iterate ${humanReadableType(rightAnnotation)}`);
         }
-        else {
-          id = path.scope.generateUidIdentifierBasedOnNode(right.node);
-          path.scope.push({id});
-          const replacement: Node = t.expressionStatement(t.assignmentExpression('=', id, right.node));
-          path.insertBefore(replacement);
-          right.replaceWith(id);
-        }
-        path.insertBefore(guard({
-          check: checks.iterable({input: id}),
-          message: t.stringLiteral(`Expected ${generate(right.node).code} to be iterable, got ${readableName({input: id})}`)
-        }));
       }
+      let id: ?Identifier;
+      if (right.isIdentifier()) {
+        id = right.node;
+      }
+      else {
+        id = path.scope.generateUidIdentifierBasedOnNode(right.node);
+        path.scope.push({id});
+        const replacement: Node = t.expressionStatement(t.assignmentExpression('=', id, right.node));
+        path.insertBefore(replacement);
+        right.replaceWith(id);
+      }
+      path.insertBefore(guard({
+        check: checks.iterable({input: id}),
+        message: t.binaryExpression(
+          '+',
+          t.stringLiteral(`Expected ${generate(right.node).code} to be iterable, got `),
+          readableName({input: id})
+        )
+      }));
 
       if (rightAnnotation.type !== 'GenericTypeAnnotation' || rightAnnotation.id.name !== 'Iterable' || !rightAnnotation.typeParameters || !rightAnnotation.typeParameters.params.length) {
         return;
@@ -1323,9 +1352,7 @@ export default function ({types: t, template}): Object {
       if (e instanceof SyntaxError) {
         throw e;
       }
-      else {
-        console.error(e.stack);
-      }
+      console.error(e.stack);
     }
     while (annotation && annotation.type === 'TypeAnnotation') {
       annotation = annotation.typeAnnotation;
@@ -1359,7 +1386,7 @@ export default function ({types: t, template}): Object {
         case 'Identifier':
           const binding = scope.getBinding(node.name);
           if (!binding || !binding.identifier) {
-            break;
+            return path.getTypeAnnotation();
           }
           const id = binding.identifier;
           if (binding.path.type === 'ObjectPattern') {
@@ -1377,7 +1404,7 @@ export default function ({types: t, template}): Object {
           else if (isPolymorphicType(id, scope)) {
             return t.anyTypeAnnotation();
           }
-          return binding.path.getTypeAnnotation();
+          return binding.constant ? binding.path.getTypeAnnotation() : path.getTypeAnnotation();
         case 'StringLiteral':
         case 'NumericLiteral':
         case 'BooleanLiteral':
@@ -2501,7 +2528,7 @@ export default function ({types: t, template}): Object {
     return t.binaryExpression(
       '+',
       t.stringLiteral(message),
-      node.argument ? readableName({input: id || node.argument}) : t.stringLiteral('undefined')
+      id ? readableName({input: id}) : node.argument ? readableName({input: node.argument}) : t.stringLiteral('undefined')
     );
   }
 
@@ -2689,7 +2716,6 @@ export default function ({types: t, template}): Object {
   function maybeSkip (path: NodePath): boolean {
     const {node} = path;
     if (node.hasBeenTypeChecked) {
-      path.skip();
       return true;
     }
     if (node.leadingComments && node.leadingComments.length) {
