@@ -10,10 +10,18 @@ class Foo {
       got.push(f);
     }
   }
+
+  myFunction2(): void {
+    for (f of this.foo) {
+      got.push(f);
+    }
+    var f;
+  }
 }
 
 export default function demo (): string[] {
   const foo = new Foo ();
   foo.myFunction();
+  foo.myFunction2();
   return got;
 }

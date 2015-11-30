@@ -502,38 +502,31 @@ export default function ({types: t, template}): Object {
       const right: NodePath = path.get('right');
       const rightAnnotation: TypeAnnotation = getAnnotation(right);
       const leftAnnotation: TypeAnnotation = left.isVariableDeclaration() ? getAnnotation(left.get('declarations')[0].get('id')) : getAnnotation(left);
-      const ok: ?boolean = maybeIterableAnnotation(rightAnnotation);
-      if (ok === false) {
-        throw path.buildCodeFrameError(`Cannot iterate ${humanReadableType(rightAnnotation)}`);
-      }
-      else if (ok !== true) {
-        let id: ?Identifier;
-        if (right.isIdentifier()) {
-          id = right.node;
+      if (rightAnnotation.type !== 'VoidTypeAnnotation') {
+        const ok: ?boolean = maybeIterableAnnotation(rightAnnotation);
+        if (ok === false) {
+          throw path.buildCodeFrameError(`Cannot iterate ${humanReadableType(rightAnnotation)}`);
         }
-        else {
-          id = path.scope.generateUidIdentifierBasedOnNode(right.node);
-          path.scope.push({id});
-          const replacement: Node = t.expressionStatement(t.assignmentExpression('=', id, right.node));
-          path.insertBefore(replacement);
-          right.replaceWith(id);
-        }
-        path.insertBefore(guard({
-          check: checks.iterable({input: id}),
-          message: t.binaryExpression(
-            '+',
-            t.stringLiteral(`Expected ${generate(right.node).code} to be iterable, got `),
-            readableName({input: id})
-          )
-        }));
       }
-
-      right.node.hasBeenTypeChecked = true;
-      right.hasBeenTypeChecked = true;
-      left.node.hasBeenTypeChecked = true;
-      left.hasBeenTypeChecked = true;
-      path.node.hasBeenTypeChecked = true;
-      path.hasBeenTypeChecked = true;
+      let id: ?Identifier;
+      if (right.isIdentifier()) {
+        id = right.node;
+      }
+      else {
+        id = path.scope.generateUidIdentifierBasedOnNode(right.node);
+        path.scope.push({id});
+        const replacement: Node = t.expressionStatement(t.assignmentExpression('=', id, right.node));
+        path.insertBefore(replacement);
+        right.replaceWith(id);
+      }
+      path.insertBefore(guard({
+        check: checks.iterable({input: id}),
+        message: t.binaryExpression(
+          '+',
+          t.stringLiteral(`Expected ${generate(right.node).code} to be iterable, got `),
+          readableName({input: id})
+        )
+      }));
 
       if (rightAnnotation.type !== 'GenericTypeAnnotation' || rightAnnotation.id.name !== 'Iterable' || !rightAnnotation.typeParameters || !rightAnnotation.typeParameters.params.length) {
         return;
@@ -1337,9 +1330,7 @@ export default function ({types: t, template}): Object {
       if (e instanceof SyntaxError) {
         throw e;
       }
-      else {
-        console.error(e.stack);
-      }
+      console.error(e.stack);
     }
     while (annotation && annotation.type === 'TypeAnnotation') {
       annotation = annotation.typeAnnotation;
@@ -1373,7 +1364,7 @@ export default function ({types: t, template}): Object {
         case 'Identifier':
           const binding = scope.getBinding(node.name);
           if (!binding || !binding.identifier) {
-            break;
+            return path.getTypeAnnotation();
           }
           const id = binding.identifier;
           if (binding.path.type === 'ObjectPattern') {
@@ -1391,7 +1382,7 @@ export default function ({types: t, template}): Object {
           else if (isPolymorphicType(id, scope)) {
             return t.anyTypeAnnotation();
           }
-          return binding.path.getTypeAnnotation();
+          return binding.constant ? binding.path.getTypeAnnotation() : path.getTypeAnnotation();
         case 'StringLiteral':
         case 'NumericLiteral':
         case 'BooleanLiteral':
@@ -2703,7 +2694,6 @@ export default function ({types: t, template}): Object {
   function maybeSkip (path: NodePath): boolean {
     const {node} = path;
     if (node.hasBeenTypeChecked) {
-      path.skip();
       return true;
     }
     if (node.leadingComments && node.leadingComments.length) {
