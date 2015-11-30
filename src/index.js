@@ -520,7 +520,11 @@ export default function ({types: t, template}): Object {
         }
         path.insertBefore(guard({
           check: checks.iterable({input: id}),
-          message: t.stringLiteral(`Expected ${generate(right.node).code} to be iterable, got ${readableName({input: id})}`)
+          message: t.binaryExpression(
+            '+',
+            t.stringLiteral(`Expected ${generate(right.node).code} to be iterable, got `),
+            readableName({input: id})
+          )
         }));
       }
 
