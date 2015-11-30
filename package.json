@@ -1,12 +1,12 @@
 {
   "name": "babel-plugin-typecheck",
-  "version": "3.4.0",
+  "version": "3.4.1",
   "description": "Transforms flow type annotations into runtime type checks.",
   "main": "lib/index.js",
   "scripts": {
     "build": "babel --plugins syntax-flow,transform-flow-strip-types -d ./lib ./src",
     "build-typed": "npm run build && babel --plugins ./lib,syntax-flow,transform-flow-strip-types -d ./lib-checked ./src",
-    "prepublish": "npm run build",
+    "prepublish": "npm run test-checked",
     "pretest": "npm run build",
     "test": "mocha ./test/index.js",
     "test-checked": "npm run build-typed && TYPECHECK_USE_LIBCHECKED=1 mocha ./test/index.js",
