@@ -2174,7 +2174,7 @@ export default function ({types: t, template}): Object {
       case 'TypeAnnotation':
       case 'FunctonTypeParam':
       case 'NullableTypeAnnotation':
-        return maybeInstanceOfAnnotation(annotation.typeAnnotation);
+        return maybeInstanceOfAnnotation(annotation.typeAnnotation, expected);
       case 'GenericTypeAnnotation':
         if (annotation.id.name === expected.name) {
           return true;
