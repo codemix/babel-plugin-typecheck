@@ -785,7 +785,7 @@ export default function ({types: t, template}): Object {
       case 'ObjectTypeAnnotation':
         break;
       case 'TypeAnnotation':
-      case 'FunctonTypeParam':
+      case 'FunctionTypeParam':
       case 'NullableTypeAnnotation':
         return compareObjectAnnotation(a, b.typeAnnotation);
       case 'UnionTypeAnnotation':
@@ -832,7 +832,7 @@ export default function ({types: t, template}): Object {
   function compareArrayAnnotation (a: Node, b: Node): ?boolean {
     switch (b.type) {
       case 'TypeAnnotation':
-      case 'FunctonTypeParam':
+      case 'FunctionTypeParam':
       case 'NullableTypeAnnotation':
         return compareArrayAnnotation(a, b.typeAnnotation);
       case 'UnionTypeAnnotation':
@@ -856,7 +856,7 @@ export default function ({types: t, template}): Object {
   function compareGenericAnnotation (a: Node, b: Node): ?boolean {
     switch (b.type) {
       case 'TypeAnnotation':
-      case 'FunctonTypeParam':
+      case 'FunctionTypeParam':
       case 'NullableTypeAnnotation':
         return compareGenericAnnotation(a, b.typeAnnotation);
       case 'GenericTypeAnnotation':
@@ -887,7 +887,7 @@ export default function ({types: t, template}): Object {
     }
     switch (b.type) {
       case 'TypeAnnotation':
-      case 'FunctonTypeParam':
+      case 'FunctionTypeParam':
       case 'NullableTypeAnnotation':
         return compareTupleAnnotation(a, b.typeAnnotation);
       case 'UnionTypeAnnotation':
@@ -923,7 +923,7 @@ export default function ({types: t, template}): Object {
   function compareNullableAnnotation (a: Node, b: Node): ?boolean {
     switch (b.type) {
       case 'TypeAnnotation':
-      case 'FunctonTypeParam':
+      case 'FunctionTypeParam':
         return compareNullableAnnotation(a, b.typeAnnotation);
       case 'NullableTypeAnnotation':
       case 'VoidTypeAnnotation':
@@ -1246,7 +1246,7 @@ export default function ({types: t, template}): Object {
   function checkAnnotation (input: Node, annotation: TypeAnnotation, scope: Scope): ?Node {
     switch (annotation.type) {
       case 'TypeAnnotation':
-      case 'FunctonTypeParam':
+      case 'FunctionTypeParam':
         return checkAnnotation(input, annotation.typeAnnotation, scope);
       case 'TypeofTypeAnnotation':
         return checks.typeof({input, annotation: annotation.argument, scope});
@@ -1321,7 +1321,7 @@ export default function ({types: t, template}): Object {
     const other = getAnnotation(path);
     switch (annotation.type) {
       case 'TypeAnnotation':
-      case 'FunctonTypeParam':
+      case 'FunctionTypeParam':
         return staticCheckAnnotation(path, annotation.typeAnnotation);
       case 'GenericTypeAnnotation':
         if (isTypeChecker(annotation.id, path.scope)) {
@@ -1834,7 +1834,7 @@ export default function ({types: t, template}): Object {
   function isStrictlyArrayAnnotation (annotation: TypeAnnotation): boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
-      case 'FunctonTypeParam':
+      case 'FunctionTypeParam':
         return isStrictlyArrayAnnotation(annotation.typeAnnotation);
       case 'GenericTypeAnnotation':
         return annotation.id.name === 'Array';
@@ -1871,7 +1871,7 @@ export default function ({types: t, template}): Object {
   function maybeNumberAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
-      case 'FunctonTypeParam':
+      case 'FunctionTypeParam':
       case 'NullableTypeAnnotation':
         return maybeNumberAnnotation(annotation.typeAnnotation);
       case 'NumberTypeAnnotation':
@@ -1908,7 +1908,7 @@ export default function ({types: t, template}): Object {
   function maybeStringAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
-      case 'FunctonTypeParam':
+      case 'FunctionTypeParam':
       case 'NullableTypeAnnotation':
         return maybeStringAnnotation(annotation.typeAnnotation);
       case 'StringTypeAnnotation':
@@ -1961,7 +1961,7 @@ export default function ({types: t, template}): Object {
   function maybeSymbolAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
-      case 'FunctonTypeParam':
+      case 'FunctionTypeParam':
       case 'NullableTypeAnnotation':
         return maybeSymbolAnnotation(annotation.typeAnnotation);
       case 'GenericTypeAnnotation':
@@ -2013,7 +2013,7 @@ export default function ({types: t, template}): Object {
   function maybeBooleanAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
-      case 'FunctonTypeParam':
+      case 'FunctionTypeParam':
       case 'NullableTypeAnnotation':
         return maybeBooleanAnnotation(annotation.typeAnnotation);
       case 'BooleanTypeAnnotation':
@@ -2066,7 +2066,7 @@ export default function ({types: t, template}): Object {
   function maybeFunctionAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
-      case 'FunctonTypeParam':
+      case 'FunctionTypeParam':
       case 'NullableTypeAnnotation':
         return maybeFunctionAnnotation(annotation.typeAnnotation);
       case 'FunctionTypeAnnotation':
@@ -2121,7 +2121,7 @@ export default function ({types: t, template}): Object {
       case 'MixedTypeAnnotation':
         return true;
       case 'TypeAnnotation':
-      case 'FunctonTypeParam':
+      case 'FunctionTypeParam':
         return maybeNullableAnnotation(annotation.typeAnnotation);
       case 'GenericTypeAnnotation':
         switch (annotation.id.name) {
@@ -2172,7 +2172,7 @@ export default function ({types: t, template}): Object {
   function maybeInstanceOfAnnotation (annotation: TypeAnnotation, expected: Identifier): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
-      case 'FunctonTypeParam':
+      case 'FunctionTypeParam':
       case 'NullableTypeAnnotation':
         return maybeInstanceOfAnnotation(annotation.typeAnnotation, expected);
       case 'GenericTypeAnnotation':
@@ -2220,7 +2220,7 @@ export default function ({types: t, template}): Object {
   function maybeArrayAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
-      case 'FunctonTypeParam':
+      case 'FunctionTypeParam':
       case 'NullableTypeAnnotation':
         return maybeArrayAnnotation(annotation.typeAnnotation);
       case 'TupleTypeAnnotation':
@@ -2261,7 +2261,7 @@ export default function ({types: t, template}): Object {
   function maybeIterableAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
-      case 'FunctonTypeParam':
+      case 'FunctionTypeParam':
       case 'NullableTypeAnnotation':
         return maybeIterableAnnotation(annotation.typeAnnotation);
       case 'TupleTypeAnnotation':
@@ -2304,7 +2304,7 @@ export default function ({types: t, template}): Object {
   function maybeTupleAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
-      case 'FunctonTypeParam':
+      case 'FunctionTypeParam':
       case 'NullableTypeAnnotation':
         return maybeTupleAnnotation(annotation.typeAnnotation);
       case 'TupleTypeAnnotation':
@@ -2340,7 +2340,7 @@ export default function ({types: t, template}): Object {
   function humanReadableType (annotation: TypeAnnotation): string {
     switch (annotation.type) {
       case 'TypeAnnotation':
-      case 'FunctonTypeParam':
+      case 'FunctionTypeParam':
         return humanReadableType(annotation.typeAnnotation);
 
       case 'FunctionTypeAnnotation':
