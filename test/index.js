@@ -12,6 +12,8 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('bug-xxx-assignment-expression');
+  ok('bug-78-not-type-checked-array');
   ok('bug-76-cannot-read-property-name-of-undefined');
   ok('bug-71-cannot-iterate-void');
   ok('iterable', [1, 2, 3]);

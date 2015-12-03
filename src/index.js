@@ -634,7 +634,9 @@ export default function ({types: t, template}): Object {
       symbol (path: NodePath): ?boolean {
         return maybeSymbolAnnotation(getAnnotation(path));
       },
-      instanceof ({path, type}): ?boolean {
+      instanceof ({path, annotation}): ?boolean {
+        const type = createTypeExpression(annotation.id);
+
         const {node, scope} = path;
         if (type.name === 'Object' && node.type === 'ObjectExpression' && !scope.hasBinding('Object')) {
           return true;
@@ -645,7 +647,7 @@ export default function ({types: t, template}): Object {
         else if (type.name === 'Set' && !scope.hasBinding('Set')) {
           return null;
         }
-        return maybeInstanceOfAnnotation(getAnnotation(path), type);
+        return maybeInstanceOfAnnotation(getAnnotation(path), type, annotation.typeParameters ? annotation.typeParameters.params : []);
       },
       type ({path, type}): ?boolean {
         return null;
@@ -726,6 +728,9 @@ export default function ({types: t, template}): Object {
   }
 
   function unionComparer (a: TypeAnnotation, b: TypeAnnotation, comparator: (a:TypeAnnotation, b:TypeAnnotation) => ?boolean): ?boolean {
+    if (!a.types || a.types.length === 0) {
+      return null;
+    }
     let falseCount = 0;
     let trueCount = 0;
     if (!a.types) {
@@ -1334,7 +1339,7 @@ export default function ({types: t, template}): Object {
           return staticChecks.symbol(path);
         }
         else {
-          return staticChecks.instanceof({path, type: createTypeExpression(annotation.id)});
+          return staticChecks.instanceof({path, annotation});
         }
     }
     return compareAnnotations(annotation, other);
@@ -2169,23 +2174,40 @@ export default function ({types: t, template}): Object {
    * Returns `true` if the annotation is compatible with an object type,
    * `false` if it definitely isn't, or `null` if we're not sure.
    */
-  function maybeInstanceOfAnnotation (annotation: TypeAnnotation, expected: Identifier): ?boolean {
+  function maybeInstanceOfAnnotation (annotation: TypeAnnotation, expected: Identifier, typeParameters: TypeAnnotation[]): ?boolean {
     switch (annotation.type) {
       case 'TypeAnnotation':
       case 'FunctionTypeParam':
       case 'NullableTypeAnnotation':
-        return maybeInstanceOfAnnotation(annotation.typeAnnotation, expected);
+        return maybeInstanceOfAnnotation(annotation.typeAnnotation, expected, typeParameters);
       case 'GenericTypeAnnotation':
         if (annotation.id.name === expected.name) {
-          return true;
+          if (typeParameters.length === 0) {
+            return true;
+          }
+          if (annotation.typeParameters && annotation.typeParameters.params.length) {
+            let trueCount = 0;
+            let nullCount = 0;
+            for (let i = 0; i < typeParameters.length && i < annotation.typeParameters.params.length; i++) {
+              const result = compareAnnotations(typeParameters[i], annotation.typeParameters.params[i]);
+              if (result === false) {
+                return false;
+              }
+              else if (result === true) {
+                trueCount++;
+              }
+              else {
+                nullCount++;
+              }
+            }
+            return trueCount > 0 && nullCount === 0 ? true : null;
+          }
         }
-        else {
-          return null;
-        }
+        return null;
       case 'UnionTypeAnnotation':
         let falseCount = 0;
         for (let type of annotation.types) {
-          const result = maybeInstanceOfAnnotation(type, expected);
+          const result = maybeInstanceOfAnnotation(type, expected, typeParameters);
           if (result === true) {
             return true;
           }
