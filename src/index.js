@@ -225,15 +225,15 @@ export default function ({types: t, template}): Object {
           const id = scope.generateUidIdentifier('id');
           const check = checkAnnotation(id, annotation, scope);
           if (check) {
-            const returnGuard = guardFn({
+            node.returnGuard = guardFn({
               id,
               name,
               check,
               message: returnTypeErrorMessage(path, path.node, id)
             });
-            returnGuard.hasBeenTypeChecked = true;
+            node.returnGuard.hasBeenTypeChecked = true;
             node.returnGuardName = name;
-            node.body.body.unshift(returnGuard);
+            node.returnGuardCount = 0;
           }
         }
         node.body.body.unshift(...paramChecks);
@@ -253,6 +253,9 @@ export default function ({types: t, template}): Object {
             annotation = annotation.typeParameters.params[1];
           }
           throw path.buildCodeFrameError(`Function ${node.id ? `"${node.id.name}" ` : ''}did not return a value, expected ${humanReadableType(annotation)}`);
+        }
+        if (node.returnGuardCount) {
+          path.get('body').get('body')[0].insertBefore(node.returnGuard);
         }
       }
     },
@@ -365,6 +368,7 @@ export default function ({types: t, template}): Object {
       else if (ok === false) {
         throw path.buildCodeFrameError(`Function ${fn.node.id ? `"${fn.node.id.name}" ` : ''}returned an invalid type, expected ${humanReadableType(annotation)} got ${humanReadableType(getAnnotation(path.get('argument')))}`);
       }
+      fn.node.returnGuardCount++;
       const returner = t.returnStatement(t.callExpression(fn.node.returnGuardName, [node.argument]));
       returner.hasBeenTypeChecked = true;
       path.replaceWith(returner);
