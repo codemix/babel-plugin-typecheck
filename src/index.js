@@ -213,28 +213,8 @@ export default function ({types: t, template}): Object {
           node.body = t.blockStatement([t.returnStatement(node.body)]);
         }
         if (node.returnType) {
-          // Create a function which can verify this return type
-          let annotation = node.returnType;
-          if (annotation.type === 'TypeAnnotation') {
-            annotation = annotation.typeAnnotation;
-          }
-          if (isGeneratorAnnotation(annotation)) {
-            annotation = annotation.typeParameters && annotation.typeParameters.params.length > 1 ? annotation.typeParameters.params[1] : t.anyTypeAnnotation();
-          }
-          const name = scope.generateUidIdentifierBasedOnNode(path.node);
-          const id = scope.generateUidIdentifier('id');
-          const check = checkAnnotation(id, annotation, scope);
-          if (check) {
-            const returnGuard = guardFn({
-              id,
-              name,
-              check,
-              message: returnTypeErrorMessage(path, path.node, id)
-            });
-            returnGuard.hasBeenTypeChecked = true;
-            node.returnGuardName = name;
-            node.body.body.unshift(returnGuard);
-          }
+          createFunctionReturnGuard(path);
+          createFunctionYieldGuards(path);
         }
         node.body.body.unshift(...paramChecks);
         node.savedTypeAnnotation = node.returnType;
@@ -254,6 +234,15 @@ export default function ({types: t, template}): Object {
           }
           throw path.buildCodeFrameError(`Function ${node.id ? `"${node.id.name}" ` : ''}did not return a value, expected ${humanReadableType(annotation)}`);
         }
+        if (node.nextGuardCount) {
+          path.get('body').get('body')[0].insertBefore(node.nextGuard);
+        }
+        if (node.yieldGuardCount) {
+          path.get('body').get('body')[0].insertBefore(node.yieldGuard);
+        }
+        if (node.returnGuardCount) {
+          path.get('body').get('body')[0].insertBefore(node.returnGuard);
+        }
       }
     },
 
@@ -262,7 +251,7 @@ export default function ({types: t, template}): Object {
       if (!fn) {
         return;
       }
-      fn.yieldCount++;
+      fn.node.yieldCount++;
       if (!isGeneratorAnnotation(fn.node.returnType) || maybeSkip(path)) {
         return;
       }
@@ -284,49 +273,24 @@ export default function ({types: t, template}): Object {
       else if (ok === false) {
         throw path.buildCodeFrameError(`Function ${fn.node.id ? `"${fn.node.id.name}" ` : ''}yielded an invalid type, expected ${humanReadableType(yieldType)} got ${humanReadableType(getAnnotation(path.get('argument')))}`);
       }
-      const input = node.argument || t.identifier('undefined');
-      const id = scope.generateUidIdentifierBasedOnNode(input);
-      const check = checkAnnotation(id, yieldType, scope);
-      if (check) {
-        const yielder = t.yieldExpression(guardInline({
-          id,
-          input,
-          check,
-          message: yieldTypeErrorMessage(path, fn.node, id)
-        }));
+      fn.node.yieldGuardCount++;
+      if (fn.node.yieldGuard) {
+        const yielder = t.yieldExpression(
+          t.callExpression(fn.node.yieldGuardName, [node.argument || t.identifier('undefined')])
+        );
         yielder.hasBeenTypeChecked = true;
-        if (nextType) {
-          const id = scope.generateUidIdentifierBasedOnNode(yielder);
-          const check = checkAnnotation(id, nextType, scope);
-          if (check) {
-            path.replaceWith(guardInline({
-              id,
-              input: yielder,
-              check,
-              message: yieldNextTypeErrorMessage(path, fn.node, id)
-            }));
-          }
-          else {
-            path.replaceWith(yielder);
-          }
+
+        if (fn.node.nextGuard) {
+          fn.node.nextGuardCount++;
+          path.replaceWith(t.callExpression(fn.node.nextGuardName, [yielder]));
         }
         else {
           path.replaceWith(yielder);
         }
       }
-      else if (nextType) {
-        const yielder = t.yieldExpression(node.argument);
-        yielder.hasBeenTypeChecked = true;
-        const id = scope.generateUidIdentifierBasedOnNode(yielder);
-        const check = checkAnnotation(id, nextType, scope);
-        if (check) {
-          path.replaceWith(guardInline({
-            id,
-            input: yielder,
-            check,
-            message: yieldNextTypeErrorMessage(path, fn.node, id)
-          }));
-        }
+      else if (fn.node.nextGuard) {
+        fn.node.nextGuardCount++;
+        path.replaceWith(t.callExpression(fn.node.nextGuardName, [yielder]));
       }
     },
 
@@ -365,6 +329,7 @@ export default function ({types: t, template}): Object {
       else if (ok === false) {
         throw path.buildCodeFrameError(`Function ${fn.node.id ? `"${fn.node.id.name}" ` : ''}returned an invalid type, expected ${humanReadableType(annotation)} got ${humanReadableType(getAnnotation(path.get('argument')))}`);
       }
+      fn.node.returnGuardCount++;
       const returner = t.returnStatement(t.callExpression(fn.node.returnGuardName, [node.argument]));
       returner.hasBeenTypeChecked = true;
       path.replaceWith(returner);
@@ -571,6 +536,87 @@ export default function ({types: t, template}): Object {
           }
         }
         path.traverse(visitors);
+      }
+    }
+  }
+
+  /**
+   * Create a function which can verify the return type for a function.
+   */
+  function createFunctionReturnGuard (path: NodePath): void {
+    const {node, scope} = path;
+    let annotation = node.returnType;
+    if (annotation.type === 'TypeAnnotation') {
+      annotation = annotation.typeAnnotation;
+    }
+    if (isGeneratorAnnotation(annotation)) {
+      annotation = annotation.typeParameters && annotation.typeParameters.params.length > 1 ? annotation.typeParameters.params[1] : t.anyTypeAnnotation();
+    }
+    const name = scope.generateUidIdentifierBasedOnNode(node);
+    const id = scope.generateUidIdentifier('id');
+    const check = checkAnnotation(id, annotation, scope);
+    if (check) {
+      node.returnGuard = guardFn({
+        id,
+        name,
+        check,
+        message: returnTypeErrorMessage(path, path.node, id)
+      });
+      node.returnGuard.hasBeenTypeChecked = true;
+      node.returnGuardName = name;
+      node.returnGuardCount = 0;
+    }
+  }
+
+  function createFunctionYieldGuards (path: NodePath) {
+    const {node, scope} = path;
+    let annotation = node.returnType;
+    if (annotation.type === 'NullableTypeAnnotation' || annotation.type === 'TypeAnnotation') {
+      annotation = annotation.typeAnnotation;
+    }
+    if (!annotation.typeParameters || annotation.typeParameters.params.length === 0) {
+      return;
+    }
+    if (annotation.type === 'TypeAnnotation') {
+      annotation = annotation.typeAnnotation;
+    }
+    if (!isGeneratorAnnotation(annotation)) {
+      return;
+    }
+
+    const yieldType = annotation.typeParameters.params[0];
+    const nextType = annotation.typeParameters.params[2];
+
+    if (yieldType) {
+      const name = scope.generateUidIdentifier(`check${node.id ? node.id.name.slice(0, 1).toUpperCase() + node.id.name.slice(1) : ''}Yield`);
+      const id = scope.generateUidIdentifier('id');
+      const check = checkAnnotation(id, yieldType, scope);
+      if (check) {
+        node.yieldGuard = guardFn({
+          id,
+          name,
+          check,
+          message: yieldTypeErrorMessage(node, yieldType, id)
+        });
+        node.yieldGuardName = name;
+        node.yieldGuardCount = 0;
+      }
+    }
+
+
+    if (nextType) {
+      const name = scope.generateUidIdentifier(`check${node.id ? node.id.name.slice(0, 1).toUpperCase() + node.id.name.slice(1) : ''}Next`);
+      const id = scope.generateUidIdentifier('id');
+      const check = checkAnnotation(id, nextType, scope);
+      if (check) {
+        node.nextGuard = guardFn({
+          id,
+          name,
+          check,
+          message: yieldNextTypeErrorMessage(node, nextType, id)
+        });
+        node.nextGuardName = name;
+        node.nextGuardCount = 0;
       }
     }
   }
@@ -2554,40 +2600,24 @@ export default function ({types: t, template}): Object {
     );
   }
 
-  function yieldTypeErrorMessage (path: NodePath, fn: Node, id: ?Identifier|Literal): Node {
-    const {node, scope} = path;
+  function yieldTypeErrorMessage (fn: Node, annotation: TypeAnnotation, id: Identifier|Literal): Node {
     const name = fn.id ? fn.id.name : '';
-    let annotation = fn.returnType;
-    if (annotation.type === 'TypeAnnotation') {
-      annotation = annotation.typeAnnotation;
-    }
-    if (fn.generator && isGeneratorAnnotation(annotation) && annotation.typeParameters && annotation.typeParameters.params.length > 0) {
-      annotation = annotation.typeParameters.params[0];
-    }
     const message = `Function ${name ? `"${name}" ` : ''} yielded an invalid value, expected ${humanReadableType(annotation)} got `;
 
     return t.binaryExpression(
       '+',
       t.stringLiteral(message),
-      node.argument ? readableName({input: id || node.argument}) : t.stringLiteral('undefined')
+      readableName({input: id})
     );
   }
-  function yieldNextTypeErrorMessage (path: NodePath, fn: Node, id: ?Identifier|Literal): Node {
-    const {node, scope} = path;
+  function yieldNextTypeErrorMessage (fn: Node, annotation: TypeAnnotation, id: Identifier|Literal): Node {
     const name = fn.id ? fn.id.name : '';
-    let annotation = fn.returnType;
-    if (annotation.type === 'TypeAnnotation') {
-      annotation = annotation.typeAnnotation;
-    }
-    if (fn.generator && isGeneratorAnnotation(annotation) && annotation.typeParameters && annotation.typeParameters.params.length > 2) {
-      annotation = annotation.typeParameters.params[2];
-    }
     const message = `Generator ${name ? `"${name}" ` : ''}received an invalid next value, expected ${humanReadableType(annotation)} got `;
 
     return t.binaryExpression(
       '+',
       t.stringLiteral(message),
-      node.argument ? readableName({input: id || node.argument}) : t.stringLiteral('undefined')
+      readableName({input: id})
     );
   }
 
