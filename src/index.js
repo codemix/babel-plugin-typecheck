@@ -1208,7 +1208,7 @@ export default function ({types: t, template}): Object {
     const check = properties.reduce((expr, prop, index) => {
       let target;
 
-      target = t.memberExpression(input, prop.key);
+      target = prop.key.type === 'Identifier' ? t.memberExpression(input, prop.key) : t.memberExpression(input, prop.key, true);
       let check = checkAnnotation(target, prop.value, scope);
       if (check) {
         if (prop.optional) {
@@ -1431,6 +1431,9 @@ export default function ({types: t, template}): Object {
     else if (node.type === 'ObjectProperty' && node.typeAnnotation) {
       return getObjectPropertyAnnotation(path);
     }
+    else if (node.type === 'SpreadProperty' && node.typeAnnotation) {
+      return getSpreadPropertyAnnotation(path);
+    }
     else if (node.type === 'ObjectMethod' && node.returnType) {
       return getObjectMethodAnnotation(path);
     }
@@ -1494,6 +1497,8 @@ export default function ({types: t, template}): Object {
           return getConditionalExpressionAnnotation(path);
         case 'ObjectMethod':
           return getObjectMethodAnnotation(path);
+        case 'SpreadProperty':
+          return getSpreadPropertyAnnotation(path);
         case 'ObjectProperty':
           return getObjectPropertyAnnotation(path);
         case 'ClassDeclaration':
@@ -1574,6 +1579,15 @@ export default function ({types: t, template}): Object {
         return prop;
       }
     }
+  }
+
+  function getSpreadPropertyAnnotation (path: NodePath): ?TypeAnnotation {
+    const {node} = path;
+    let annotation = node.typeAnnotation || node.savedTypeAnnotation;
+    if (!annotation) {
+      annotation = getAnnotation(path.get('argument'));
+    }
+    return annotation;
   }
 
   function getObjectPropertyAnnotation (path: NodePath): ?TypeAnnotation {
@@ -1756,14 +1770,19 @@ export default function ({types: t, template}): Object {
 
   function getObjectExpressionAnnotation (path: NodePath): TypeAnnotation {
     const annotation = t.objectTypeAnnotation(
-      path.get('properties').map(property => {
-        if (property.computed) {
-          return;
+      path.get('properties')
+      .filter(prop => !prop.node.computed)
+      .map(getAnnotation)
+      .reduce((properties, prop) => {
+        if (t.isObjectTypeProperty(prop)) {
+          properties.push(prop);
         }
-        else {
-          return getAnnotation(property);
+        else if (t.isObjectTypeAnnotation(prop)) {
+          properties.push(...prop.properties);
         }
-      }).filter(identity)
+        return properties;
+      }, [])
+      .filter(annotation => !t.isAnyTypeAnnotation(annotation.value))
     );
     return annotation;
   }
