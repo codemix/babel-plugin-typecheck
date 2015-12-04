@@ -12,6 +12,8 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('bug-83-spread-object', {a: 1, b: 2, c: 3});
+  ok('bug-82-too-much-inference');
   ok('bug-xxx-assignment-expression');
   ok('bug-78-not-type-checked-array');
   ok('bug-76-cannot-read-property-name-of-undefined');

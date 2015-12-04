@@ -1208,7 +1208,7 @@ export default function ({types: t, template}): Object {
     const check = properties.reduce((expr, prop, index) => {
       let target;
 
-      target = t.memberExpression(input, prop.key);
+      target = prop.key.type === 'Identifier' ? t.memberExpression(input, prop.key) : t.memberExpression(input, prop.key, true);
       let check = checkAnnotation(target, prop.value, scope);
       if (check) {
         if (prop.optional) {
@@ -1403,7 +1403,9 @@ export default function ({types: t, template}): Object {
       if (e instanceof SyntaxError) {
         throw e;
       }
-      console.error(e.stack);
+      if (process.env.TYPECHECK_DEBUG) {
+        console.error(e.stack);
+      }
     }
     while (annotation && annotation.type === 'TypeAnnotation') {
       annotation = annotation.typeAnnotation;
@@ -1428,6 +1430,9 @@ export default function ({types: t, template}): Object {
     }
     else if (node.type === 'ObjectProperty' && node.typeAnnotation) {
       return getObjectPropertyAnnotation(path);
+    }
+    else if (node.type === 'SpreadProperty' && node.typeAnnotation) {
+      return getSpreadPropertyAnnotation(path);
     }
     else if (node.type === 'ObjectMethod' && node.returnType) {
       return getObjectMethodAnnotation(path);
@@ -1492,6 +1497,8 @@ export default function ({types: t, template}): Object {
           return getConditionalExpressionAnnotation(path);
         case 'ObjectMethod':
           return getObjectMethodAnnotation(path);
+        case 'SpreadProperty':
+          return getSpreadPropertyAnnotation(path);
         case 'ObjectProperty':
           return getObjectPropertyAnnotation(path);
         case 'ClassDeclaration':
@@ -1574,18 +1581,21 @@ export default function ({types: t, template}): Object {
     }
   }
 
+  function getSpreadPropertyAnnotation (path: NodePath): ?TypeAnnotation {
+    const {node} = path;
+    let annotation = node.typeAnnotation || node.savedTypeAnnotation;
+    if (!annotation) {
+      annotation = getAnnotation(path.get('argument'));
+    }
+    return annotation;
+  }
+
   function getObjectPropertyAnnotation (path: NodePath): ?TypeAnnotation {
     const {node} = path;
     let annotation = node.typeAnnotation || node.savedTypeAnnotation;
     if (!annotation) {
       if (node.value) {
-        const value = path.get('value');
-        if (value.isLiteral()) {
-          annotation = createLiteralTypeAnnotation(value);
-        }
-        else {
-          annotation = value.node.typeAnnotation || value.node.savedTypeAnnotation || t.anyTypeAnnotation();
-        }
+        annotation = node.value.typeAnnotation || node.value.savedTypeAnnotation || t.anyTypeAnnotation();
       }
       else {
         annotation = t.anyTypeAnnotation();
@@ -1593,7 +1603,7 @@ export default function ({types: t, template}): Object {
     }
     return t.objectTypeProperty(
       node.key,
-      annotation || t.anyTypeAnnotation()
+      annotation
     );
   }
 
@@ -1760,14 +1770,19 @@ export default function ({types: t, template}): Object {
 
   function getObjectExpressionAnnotation (path: NodePath): TypeAnnotation {
     const annotation = t.objectTypeAnnotation(
-      path.get('properties').map(property => {
-        if (property.computed) {
-          return;
+      path.get('properties')
+      .filter(prop => !prop.node.computed)
+      .map(getAnnotation)
+      .reduce((properties, prop) => {
+        if (t.isObjectTypeProperty(prop)) {
+          properties.push(prop);
         }
-        else {
-          return getAnnotation(property);
+        else if (t.isObjectTypeAnnotation(prop)) {
+          properties.push(...prop.properties);
         }
-      }).filter(identity)
+        return properties;
+      }, [])
+      .filter(annotation => !t.isAnyTypeAnnotation(annotation.value))
     );
     return annotation;
   }
@@ -1823,7 +1838,7 @@ export default function ({types: t, template}): Object {
           const id = target.get('property').node;
           for (let {key, value} of annotation.properties || []) {
             if (key.name === id.name) {
-              return value;
+              return value.type === 'VoidTypeAnnotation' ? t.anyTypeAnnotation() : value;
             }
           }
       }
