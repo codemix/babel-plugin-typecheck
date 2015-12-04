@@ -1403,7 +1403,9 @@ export default function ({types: t, template}): Object {
       if (e instanceof SyntaxError) {
         throw e;
       }
-      console.error(e.stack);
+      if (process.env.TYPECHECK_DEBUG) {
+        console.error(e.stack);
+      }
     }
     while (annotation && annotation.type === 'TypeAnnotation') {
       annotation = annotation.typeAnnotation;
@@ -1579,13 +1581,7 @@ export default function ({types: t, template}): Object {
     let annotation = node.typeAnnotation || node.savedTypeAnnotation;
     if (!annotation) {
       if (node.value) {
-        const value = path.get('value');
-        if (value.isLiteral()) {
-          annotation = createLiteralTypeAnnotation(value);
-        }
-        else {
-          annotation = value.node.typeAnnotation || value.node.savedTypeAnnotation || t.anyTypeAnnotation();
-        }
+        annotation = node.value.typeAnnotation || node.value.savedTypeAnnotation || t.anyTypeAnnotation();
       }
       else {
         annotation = t.anyTypeAnnotation();
@@ -1593,7 +1589,7 @@ export default function ({types: t, template}): Object {
     }
     return t.objectTypeProperty(
       node.key,
-      annotation || t.anyTypeAnnotation()
+      annotation
     );
   }
 
@@ -1823,7 +1819,7 @@ export default function ({types: t, template}): Object {
           const id = target.get('property').node;
           for (let {key, value} of annotation.properties || []) {
             if (key.name === id.name) {
-              return value;
+              return value.type === 'VoidTypeAnnotation' ? t.anyTypeAnnotation() : value;
             }
           }
       }
