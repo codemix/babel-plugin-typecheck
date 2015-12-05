@@ -14,6 +14,15 @@ else {
 describe('Typecheck', function () {
   ok('class-annotation', class Thing {});
   failWith(`Value of argument "input" violates contract, expected Class got boolean`, 'class-annotation', false);
+
+  if (!(() => true).prototype) {
+    failWith(`Value of argument "input" violates contract, expected Class got function`, 'class-annotation', () => true);
+  }
+  else {
+    // environment does not support spec compliant arrow functions.
+    it.skip(`Value of argument "input" violates contract, expected Class got function`);
+  }
+
   ok('bug-83-spread-object', {a: 1, b: 2, c: 3});
   ok('bug-82-too-much-inference');
   ok('bug-xxx-assignment-expression');
