@@ -12,6 +12,8 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('class-annotation', class Thing {});
+  failWith(`Value of argument "input" violates contract, expected Class got boolean`, 'class-annotation', false);
   ok('bug-83-spread-object', {a: 1, b: 2, c: 3});
   ok('bug-82-too-much-inference');
   ok('bug-xxx-assignment-expression');

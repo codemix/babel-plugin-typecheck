@@ -66,6 +66,7 @@ export default function ({types: t, template}): Object {
   const checkIsArray: (() => Node) = expression(`Array.isArray(input)`);
   const checkIsMap: (() => Node) = expression(`input instanceof Map`);
   const checkIsSet: (() => Node) = expression(`input instanceof Set`);
+  const checkIsClass: (() => Node) = expression(`typeof input === 'function' && input.prototype && input.prototype.constructor === input`);
   const checkIsGenerator: (() => Node) = expression(`typeof input === 'function' && input.generator`);
   const checkIsIterable: (() => Node) = expression(`input && typeof input[Symbol.iterator] === 'function'`);
   const checkIsObject: (() => Node) = expression(`input != null && typeof input === 'object'`);
@@ -650,6 +651,7 @@ export default function ({types: t, template}): Object {
       numericLiteral: checkNumericLiteral,
       boolean: expression(`typeof input === 'boolean'`),
       booleanLiteral: checkBooleanLiteral,
+      class: checkClass,
       function: expression(`typeof input === 'function'`),
       string: expression(`typeof input === 'string'`),
       stringLiteral: checkStringLiteral,
@@ -691,6 +693,9 @@ export default function ({types: t, template}): Object {
           return null;
         }
         else if (type.name === 'Set' && !scope.hasBinding('Set')) {
+          return null;
+        }
+        else if (type.name === 'Class' && !scope.hasBinding('Class')) {
           return null;
         }
         return maybeInstanceOfAnnotation(getAnnotation(path), type, annotation.typeParameters ? annotation.typeParameters.params : []);
@@ -1102,6 +1107,10 @@ export default function ({types: t, template}): Object {
     return checkIsIterable({input});
   }
 
+  function checkClass ({input, types, scope}): Node {
+    return checkIsClass({input});
+  }
+
   function checkArray ({input, types, scope}): Node {
     if (!types || types.length === 0) {
       return checkIsArray({input});
@@ -1319,6 +1328,9 @@ export default function ({types: t, template}): Object {
         }
         else if (annotation.id.name === 'Function') {
           return checks.function({input});
+        }
+        else if (annotation.id.name === 'Class' && !scope.hasBinding('Class')) {
+          return checks.class({input, types: annotation.typeParameters ? annotation.typeParameters.params : [], scope});
         }
         else if (annotation.id.name === 'Symbol') {
           return checks.symbol({input});
