@@ -12,6 +12,7 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('bug-87-bad-check', {});
   ok('class-annotation', class Thing {});
   failWith(`Value of argument "input" violates contract, expected Class got boolean`, 'class-annotation', false);
 
