@@ -435,10 +435,7 @@ export default function ({types: t, template}): Object {
       const id = node.left;
       const right = path.get('right');
       if (annotation.type === 'AnyTypeAnnotation') {
-        annotation = getAnnotation(right);
-        if (allowsAny(annotation)) {
-          return;
-        }
+        return;
       }
       const ok = staticCheckAnnotation(right, annotation);
       if (ok === true) {
