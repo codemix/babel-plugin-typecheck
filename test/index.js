@@ -12,6 +12,84 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('int8', 0);
+  ok('int8', 1);
+  ok('int8', 12);
+  ok('int8', 126);
+  ok('int8', -127);
+  failWith(`Value of argument "input" violates contract, expected int8 got number`,'int8', 128);
+  failWith(`Value of argument "input" violates contract, expected int8 got number`,'int8', -129);
+  failWith(`Value of argument "input" violates contract, expected int8 got number`,'int8', 123.45);
+  failWith(`Value of argument "input" violates contract, expected int8 got string`, 'int8', 'nope');
+
+  ok('uint8', 0);
+  ok('uint8', 1);
+  ok('uint8', 2);
+  ok('uint8', 25);
+  ok('uint8', 254);
+  failWith(`Value of argument "input" violates contract, expected uint8 got number`,'uint8', 256);
+  failWith(`Value of argument "input" violates contract, expected uint8 got number`,'uint8', -1);
+  failWith(`Value of argument "input" violates contract, expected uint8 got number`,'uint8', 123.45);
+  failWith(`Value of argument "input" violates contract, expected uint8 got string`, 'uint8', 'nope');
+
+  ok('int16', 0);
+  ok('int16', 3);
+  ok('int16', 32);
+  ok('int16', 327);
+  ok('int16', 32766)
+  failWith(`Value of argument "input" violates contract, expected int16 got number`,'int16', 32768);
+  ok('int16', -32768);
+  failWith(`Value of argument "input" violates contract, expected int16 got number`,'int16', -32769);
+  failWith(`Value of argument "input" violates contract, expected int16 got number`,'int16', 123.45);
+  failWith(`Value of argument "input" violates contract, expected int16 got string`, 'int16', 'nope');
+
+  ok('uint16', 0);
+  ok('uint16', 6);
+  ok('uint16', 65);
+  ok('uint16', 655);
+  ok('uint16', 65534);
+  failWith(`Value of argument "input" violates contract, expected uint16 got number`,'uint16', 65536);
+  failWith(`Value of argument "input" violates contract, expected uint16 got number`,'uint16', -1);
+  failWith(`Value of argument "input" violates contract, expected uint16 got number`,'uint16', 123.45);
+  failWith(`Value of argument "input" violates contract, expected uint16 got string`, 'uint16', 'nope');
+
+  ok('int32', 0);
+  ok('int32', 3);
+  ok('int32', 32);
+  ok('int32', 327);
+  ok('int32', 2147483646)
+  failWith(`Value of argument "input" violates contract, expected int32 got number`,'int32', 2147483648);
+  ok('int32', -2147483648);
+  failWith(`Value of argument "input" violates contract, expected int32 got number`,'int32', -2147483649);
+  failWith(`Value of argument "input" violates contract, expected int32 got number`,'int32', 123.45);
+  failWith(`Value of argument "input" violates contract, expected int32 got string`, 'int32', 'nope');
+
+  ok('uint32', 0);
+  ok('uint32', 6);
+  ok('uint32', 65);
+  ok('uint32', 655);
+  ok('uint32', 4294967294);
+  failWith(`Value of argument "input" violates contract, expected uint32 got number`,'uint32', 4294967296);
+  failWith(`Value of argument "input" violates contract, expected uint32 got number`,'uint32', -1);
+  failWith(`Value of argument "input" violates contract, expected uint32 got number`,'uint32', 123.45);
+  failWith(`Value of argument "input" violates contract, expected uint32 got string`, 'uint32', 'nope');
+
+  ok('float32', 1.999);
+  ok('float32', -1.999);
+  ok('float32', 1e5);
+  failWith(`Value of argument "input" violates contract, expected float32 got number`, 'float32', -3.40282348e+38);
+  failWith(`Value of argument "input" violates contract, expected float32 got number`, 'float32', 3.40282348e+38);
+  failWith(`Value of argument "input" violates contract, expected float32 got number`, 'float32', 1e48);
+  failWith(`Value of argument "input" violates contract, expected float32 got string`, 'float32', 'nope');
+
+  ok('float64', 123);
+  ok('float64', -123);
+  ok('float64', Math.pow(2, 32));
+  ok('float64', Math.pow(2, 48));
+  ok('float64', Math.pow(2, 53));
+  failWith(`Value of argument "input" violates contract, expected float64 got string`, 'float64', 'nope');
+
+
   ok('bug-87-bad-check', {});
   ok('class-annotation', class Thing {});
   failWith(`Value of argument "input" violates contract, expected Class got boolean`, 'class-annotation', false);

@@ -670,7 +670,16 @@ export default function ({types: t, template}): Object {
       tuple: checkTuple,
       object: checkObject,
       nullable: checkNullable,
-      typeof: checkTypeof
+      typeof: checkTypeof,
+      int8: expression(`typeof input === 'number' && !isNaN(input) && input >= -128 && input <= 127 && input === Math.floor(input)`),
+      uint8: expression(`typeof input === 'number' && !isNaN(input) && input >= 0 && input <= 255 && input === Math.floor(input)`),
+      int16: expression(`typeof input === 'number' && !isNaN(input) && input >= -32768 && input <= 32767 && input === Math.floor(input)`),
+      uint16: expression(`typeof input === 'number' && !isNaN(input) && input >= 0 && input <= 65535 && input === Math.floor(input)`),
+      int32: expression(`typeof input === 'number' && !isNaN(input) && input >= -2147483648 && input <= 2147483647 && input === Math.floor(input)`),
+      uint32: expression(`typeof input === 'number' && !isNaN(input) && input >= 0 && input <= 4294967295 && input === Math.floor(input)`),
+      float32: expression(`typeof input === 'number' && !isNaN(input) && input >= -3.40282347e+38 && input <= 3.40282347e+38`),
+      float64: expression(`typeof input === 'number' && !isNaN(input)`)
+
     };
   }
 
@@ -693,6 +702,30 @@ export default function ({types: t, template}): Object {
           return null;
         }
         else if (type.name === 'Class' && !scope.hasBinding('Class')) {
+          return null;
+        }
+        else if (type.name === 'int8' && !scope.hasBinding('int8')) {
+          return null;
+        }
+        else if (type.name === 'uint8' && !scope.hasBinding('uint8')) {
+          return null;
+        }
+        else if (type.name === 'int16' && !scope.hasBinding('int16')) {
+          return null;
+        }
+        else if (type.name === 'uint16' && !scope.hasBinding('uint16')) {
+          return null;
+        }
+        else if (type.name === 'int32' && !scope.hasBinding('int32')) {
+          return null;
+        }
+        else if (type.name === 'uint32' && !scope.hasBinding('uint32')) {
+          return null;
+        }
+        else if (type.name === 'float32' && !scope.hasBinding('float32')) {
+          return null;
+        }
+        else if (type.name === 'float64' && !scope.hasBinding('float64')) {
           return null;
         }
         return maybeInstanceOfAnnotation(getAnnotation(path), type, annotation.typeParameters ? annotation.typeParameters.params : []);
@@ -1329,7 +1362,31 @@ export default function ({types: t, template}): Object {
         else if (annotation.id.name === 'Class' && !scope.hasBinding('Class')) {
           return checks.class({input, types: annotation.typeParameters ? annotation.typeParameters.params : [], scope});
         }
-        else if (annotation.id.name === 'Symbol') {
+        else if (annotation.id.name === 'int8' && !scope.hasBinding('int8')) {
+          return checks.int8({input});
+        }
+        else if (annotation.id.name === 'uint8' && !scope.hasBinding('uint8')) {
+          return checks.uint8({input});
+        }
+        else if (annotation.id.name === 'int16' && !scope.hasBinding('int16')) {
+          return checks.int16({input});
+        }
+        else if (annotation.id.name === 'uint16' && !scope.hasBinding('uint16')) {
+          return checks.uint16({input});
+        }
+        else if (annotation.id.name === 'int32' && !scope.hasBinding('int32')) {
+          return checks.int32({input});
+        }
+        else if (annotation.id.name === 'uint32' && !scope.hasBinding('uint32')) {
+          return checks.uint32({input});
+        }
+        else if (annotation.id.name === 'float32' && !scope.hasBinding('float32')) {
+          return checks.float32({input});
+        }
+        else if (annotation.id.name === 'float64' && !scope.hasBinding('float64')) {
+          return checks.float64({input});
+        }
+        else if (annotation.id.name === 'Symbol' && !scope.hasBinding('Symbol')) {
           return checks.symbol({input});
         }
         else if (isTypeChecker(annotation.id, scope)) {
