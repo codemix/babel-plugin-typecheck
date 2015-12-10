@@ -123,6 +123,36 @@ function createUser (): User {
 }
 ```
 
+## Changes in 3.5.0
+
+Supports various number types:
+
+* int8
+* uint8
+* int16
+* uint16
+* int32
+* uint32
+* float32
+* float16
+
+
+**Example:**
+
+```js
+function demo (input: uint8): uint16 {
+  return input * input;
+}
+
+demo(1); // ok
+demo(128); // ok
+demo(255); // ok
+demo(-1); // TypeError
+demo(12.34); // TypeError
+demo(1024); // TypeError
+demo('nope'); // TypeError
+
+```
 
 ## Changes in 3.0.0
 
