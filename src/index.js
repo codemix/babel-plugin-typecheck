@@ -546,7 +546,10 @@ export default function ({types: t, template}): Object {
 
   return {
     visitor: {
-      Program (path: NodePath) {
+      Program (path: NodePath, {opts}) {
+        if (opts && opts.disable && opts.disable[process.env.NODE_ENV]) {
+          return;
+        }
         for (let child of path.get('body')) {
           if (maybeSkipFile(child)) {
             return;
