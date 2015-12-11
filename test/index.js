@@ -12,6 +12,13 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('object-indexer-basic', 'foo', 'bar');
+  failWith(`Function "demo" return value violates contract, expected Thing got Object`, 'object-indexer-basic', 'foo', false);
+
+  ok('object-indexer-mixed', 'foo', 'bar');
+  ok('object-indexer-mixed', 'foo', 123);
+  failWith(`Function "demo" return value violates contract, expected Thing got Object`, 'object-indexer-mixed', 'foo', false);
+
   ok('int8', 0);
   ok('int8', 1);
   ok('int8', 12);

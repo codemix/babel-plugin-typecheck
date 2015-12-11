@@ -53,9 +53,15 @@ npm install --save-dev babel-plugin-typecheck
 Then, in your babel configuration (usually in your `.babelrc` file), add `"typecheck"` to your list of plugins:
 ```json
 {
-  "plugins": ["typecheck"]
+  "plugins": [["typecheck", {
+    "disable": {
+      "production": true
+    }  
+  }]]
 }
 ```
+
+The example configuration will disable typecheck when `NODE_ENV=production` which is usually preferable for performance reasons.
 
 **Important**: This plugin has a dependency on `babel-plugin-syntax-flow` and `babel-plugin-transform-flow-strip-types`.
 Without `syntax-flow`, babel will be unable to parse the flow annotation syntax.
@@ -262,4 +268,3 @@ foo = 123;
 # License
 
 Published by [codemix](http://codemix.com/) under a permissive MIT License, see [LICENSE.md](./LICENSE.md).
-

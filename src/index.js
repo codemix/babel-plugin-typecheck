@@ -132,6 +132,25 @@ export default function ({types: t, template}): Object {
     input instanceof Set && Array.from(input).every(value => valueCheck)
   `);
 
+  const checkObjectIndexers: (() => Node) = expression(`
+    Object.keys(input).every(key => {
+      const value = input[key];
+      if (~fixedKeys.indexOf(key)) {
+        return true;
+      }
+      else {
+        return check;
+      }
+    });
+  `);
+
+  const checkObjectIndexersNoFixed: (() => Node) = expression(`
+    Object.keys(input).every(key => {
+      const value = input[key];
+      return check;
+    });
+  `);
+
   const PRAGMA_IGNORE_STATEMENT = /typecheck:\s*ignore\s+statement/i;
   const PRAGMA_IGNORE_FILE = /typecheck:\s*ignore\s+file/i;
 
@@ -527,7 +546,10 @@ export default function ({types: t, template}): Object {
 
   return {
     visitor: {
-      Program (path: NodePath) {
+      Program (path: NodePath, {opts}) {
+        if (opts && opts.disable && opts.disable[process.env.NODE_ENV]) {
+          return;
+        }
         for (let child of path.get('body')) {
           if (maybeSkipFile(child)) {
             return;
@@ -1240,14 +1262,14 @@ export default function ({types: t, template}): Object {
     ));
   }
 
-  function checkObject ({input, properties, scope}): Node {
+  function checkObject ({input, properties, indexers, scope}): Node {
     if (input.type === 'ObjectPattern') {
       return checkObjectPattern({input, properties, scope});
     }
+    const propNames = [];
     const check = properties.reduce((expr, prop, index) => {
-      let target;
-
-      target = prop.key.type === 'Identifier' ? t.memberExpression(input, prop.key) : t.memberExpression(input, prop.key, true);
+      const target = prop.key.type === 'Identifier' ? t.memberExpression(input, prop.key) : t.memberExpression(input, prop.key, true);
+      propNames.push(prop.key.type === 'Identifier' ? t.stringLiteral(prop.key.name) : prop.key);
       let check = checkAnnotation(target, prop.value, scope);
       if (check) {
         if (prop.optional) {
@@ -1267,6 +1289,29 @@ export default function ({types: t, template}): Object {
         return expr;
       }
     }, checkIsObject({input}));
+
+    if (indexers.length) {
+      return indexers.reduceRight((expr, indexer) => {
+        if (indexer.value.type === 'AnyTypeAnnotation') {
+          return expr;
+        }
+        const value = scope.generateUidIdentifier(indexer.id.name);
+        let check = checkAnnotation(value, indexer.value, scope);
+        const fixedKeys = t.arrayExpression(propNames);
+
+        if (check) {
+          if (propNames.length) {
+            return t.logicalExpression('&&', expr, checkObjectIndexers({input, value, check, fixedKeys}));
+          }
+          else {
+            return t.logicalExpression('&&', expr, checkObjectIndexersNoFixed({input, value, check, fixedKeys}));
+          }
+        }
+        else {
+          return expr;
+        }
+      }, check);
+    }
 
     return check;
   }
