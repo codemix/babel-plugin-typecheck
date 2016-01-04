@@ -620,18 +620,21 @@ export default function ({types: t, template}): Object {
               else if (input === undefined) {
                 return 'undefined';
               }
-              else if (typeof input === 'string') {
-                return JSON.stringify(input.length > 32 ? input.slice(0, 32) + '...' : input);
-              }
-              else if (typeof input === 'number' || typeof input === 'boolean') {
-                return input + '';
+              else if (typeof input === 'string' || typeof input === 'number' || typeof input === 'boolean') {
+                return typeof input;
               }
               else if (Array.isArray(input)) {
-                if (input.length > 8) {
-                  return '[\\n' + input.map(id).join(',\\n  ') + '\\n]';
+                if (input.length > 0) {
+                  var first = id(input[0]);
+                  if (input.every(item => id(item) === first)) {
+                    return first.trim() + '[]';
+                  }
+                  else {
+                    return '[' + input.map(id).join(', ') + ']';
+                  }
                 }
                 else {
-                  return '[' + input.map(id).join(', ') + ']';
+                  return 'Array';
                 }
               }
               else {
@@ -645,13 +648,13 @@ export default function ({types: t, template}): Object {
                   }
                 }
                 var entries = keys.map(key => {
-                  return JSON.stringify(key) + ': ' + id(input[key]);
-                }).join(',\\n  ');
+                  return (/^([A-Z_$][A-Z0-9_$]*)$/i.test(key) ? key : JSON.stringify(key)) + ': ' + id(input[key]) + ';';
+                }).join('\\n  ');
                 if (input.constructor && input.constructor.name && input.constructor.name !== 'Object') {
                   return input.constructor.name + ' {\\n  ' + entries + '\\n}';
                 }
                 else {
-                  return '{\\n  ' + entries + '\\n}';
+                  return '{ ' + entries + '\\n}';
                 }
               }
             }

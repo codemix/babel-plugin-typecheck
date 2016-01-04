@@ -23,9 +23,9 @@ describe('Typecheck', function () {
 
     Got:
     {
-      "string": "hello world",
-      "number": 123,
-      "foo": false
+      string: string;
+      number: number;
+      foo: boolean;
     }
   `, 'object-indexer-basic', 'foo', false);
 
@@ -42,11 +42,11 @@ describe('Typecheck', function () {
 
     Got:
     {
-      "bool": true,
-      "bools": [true, false],
-      "string": "hello world",
-      "number": 123,
-      "foo": false
+      bool: boolean;
+      bools: boolean[];
+      string: string;
+      number: number;
+      foo: boolean;
     }`, 'object-indexer-mixed', 'foo', false);
 
   ok('int8', 0);
@@ -61,7 +61,7 @@ describe('Typecheck', function () {
     int8
 
     Got:
-    128`,'int8', 128);
+    number`,'int8', 128);
   failWith(`
     Value of argument "input" violates contract.
 
@@ -69,7 +69,7 @@ describe('Typecheck', function () {
     int8
 
     Got:
-    -129`,'int8', -129);
+    number`,'int8', -129);
   failWith(`
     Value of argument "input" violates contract.
 
@@ -77,7 +77,7 @@ describe('Typecheck', function () {
     int8
 
     Got:
-    123.45`,'int8', 123.45);
+    number`,'int8', 123.45);
   failWith(`
     Value of argument "input" violates contract.
 
@@ -85,7 +85,7 @@ describe('Typecheck', function () {
     int8
 
     Got:
-    "nope"`, 'int8', 'nope');
+    string`, 'int8', 'nope');
 
   ok('uint8', 0);
   ok('uint8', 1);
@@ -99,7 +99,7 @@ describe('Typecheck', function () {
     uint8
 
     Got:
-    256`,'uint8', 256);
+    number`,'uint8', 256);
   failWith(`
     Value of argument "input" violates contract.
 
@@ -107,7 +107,7 @@ describe('Typecheck', function () {
     uint8
 
     Got:
-    -1`,'uint8', -1);
+    number`,'uint8', -1);
   failWith(`
     Value of argument "input" violates contract.
 
@@ -115,7 +115,7 @@ describe('Typecheck', function () {
     uint8
 
     Got:
-    123.45`,'uint8', 123.45);
+    number`,'uint8', 123.45);
   failWith(`
     Value of argument "input" violates contract.
 
@@ -123,7 +123,7 @@ describe('Typecheck', function () {
     uint8
 
     Got:
-    "nope"`, 'uint8', 'nope');
+    string`, 'uint8', 'nope');
 
   ok('int16', 0);
   ok('int16', 3);
@@ -137,7 +137,7 @@ describe('Typecheck', function () {
     int16
 
     Got:
-    32768`,'int16', 32768);
+    number`,'int16', 32768);
   ok('int16', -32768);
   failWith(`
     Value of argument "input" violates contract.
@@ -146,7 +146,7 @@ describe('Typecheck', function () {
     int16
 
     Got:
-    -32769`,'int16', -32769);
+    number`,'int16', -32769);
   failWith(`
     Value of argument "input" violates contract.
 
@@ -154,7 +154,7 @@ describe('Typecheck', function () {
     int16
 
     Got:
-    123.45`,'int16', 123.45);
+    number`,'int16', 123.45);
   failWith(`
     Value of argument "input" violates contract.
 
@@ -162,7 +162,7 @@ describe('Typecheck', function () {
     int16
 
     Got:
-    "nope"`, 'int16', 'nope');
+    string`, 'int16', 'nope');
 
   ok('uint16', 0);
   ok('uint16', 6);
@@ -176,7 +176,7 @@ describe('Typecheck', function () {
     uint16
 
     Got:
-    65536`,'uint16', 65536);
+    number`,'uint16', 65536);
   failWith(`
     Value of argument "input" violates contract.
 
@@ -184,7 +184,7 @@ describe('Typecheck', function () {
     uint16
 
     Got:
-    -1`,'uint16', -1);
+    number`,'uint16', -1);
   failWith(`
     Value of argument "input" violates contract.
 
@@ -192,7 +192,7 @@ describe('Typecheck', function () {
     uint16
 
     Got:
-    123.45`,'uint16', 123.45);
+    number`,'uint16', 123.45);
   failWith(`
     Value of argument "input" violates contract.
 
@@ -200,7 +200,7 @@ describe('Typecheck', function () {
     uint16
 
     Got:
-    "nope"`, 'uint16', 'nope');
+    string`, 'uint16', 'nope');
 
   ok('int32', 0);
   ok('int32', 3);
@@ -214,7 +214,7 @@ describe('Typecheck', function () {
     int32
 
     Got:
-    2147483648`,'int32', 2147483648);
+    number`,'int32', 2147483648);
   ok('int32', -2147483648);
   failWith(`
     Value of argument "input" violates contract.
@@ -223,7 +223,7 @@ describe('Typecheck', function () {
     int32
 
     Got:
-    -2147483649`,'int32', -2147483649);
+    number`,'int32', -2147483649);
   failWith(`
     Value of argument "input" violates contract.
 
@@ -231,7 +231,7 @@ describe('Typecheck', function () {
     int32
 
     Got:
-    123.45`,'int32', 123.45);
+    number`,'int32', 123.45);
   failWith(`
     Value of argument "input" violates contract.
 
@@ -239,7 +239,7 @@ describe('Typecheck', function () {
     int32
 
     Got:
-    "nope"`, 'int32', 'nope');
+    string`, 'int32', 'nope');
 
   ok('uint32', 0);
   ok('uint32', 6);
@@ -253,7 +253,7 @@ describe('Typecheck', function () {
     uint32
 
     Got:
-    4294967296`,'uint32', 4294967296);
+    number`,'uint32', 4294967296);
   failWith(`
     Value of argument "input" violates contract.
 
@@ -261,7 +261,7 @@ describe('Typecheck', function () {
     uint32
 
     Got:
-    -1`,'uint32', -1);
+    number`,'uint32', -1);
   failWith(`
     Value of argument "input" violates contract.
 
@@ -269,7 +269,7 @@ describe('Typecheck', function () {
     uint32
 
     Got:
-    123.45`,'uint32', 123.45);
+    number`,'uint32', 123.45);
   failWith(`
     Value of argument "input" violates contract.
 
@@ -277,7 +277,7 @@ describe('Typecheck', function () {
     uint32
 
     Got:
-    "nope"`, 'uint32', 'nope');
+    string`, 'uint32', 'nope');
 
   ok('float32', 1.999);
   ok('float32', -1.999);
@@ -289,7 +289,7 @@ describe('Typecheck', function () {
     float32
 
     Got:
-    -3.40282348e+38`, 'float32', -3.40282348e+38);
+    number`, 'float32', -3.40282348e+38);
   failWith(`
     Value of argument "input" violates contract.
 
@@ -297,7 +297,7 @@ describe('Typecheck', function () {
     float32
 
     Got:
-    3.40282348e+38`, 'float32', 3.40282348e+38);
+    number`, 'float32', 3.40282348e+38);
   failWith(`
     Value of argument "input" violates contract.
 
@@ -305,7 +305,7 @@ describe('Typecheck', function () {
     float32
 
     Got:
-    1e+48`, 'float32', 1e48);
+    number`, 'float32', 1e48);
   failWith(`
     Value of argument "input" violates contract.
 
@@ -313,7 +313,7 @@ describe('Typecheck', function () {
     float32
 
     Got:
-    "nope"`, 'float32', 'nope');
+    string`, 'float32', 'nope');
 
   ok('float64', 123);
   ok('float64', -123);
@@ -327,7 +327,7 @@ describe('Typecheck', function () {
     float64
 
     Got:
-    "nope"`, 'float64', 'nope');
+    string`, 'float64', 'nope');
 
 
   ok('bug-87-bad-check', {});
@@ -339,7 +339,7 @@ describe('Typecheck', function () {
     Class
 
     Got:
-    false`, 'class-annotation', false);
+    boolean`, 'class-annotation', false);
 
   if (!(() => true).prototype) {
     failWith(`
@@ -377,7 +377,7 @@ describe('Typecheck', function () {
     number
 
     Got:
-    "a"`, 'iterable', ['a', 'b', 'c']);
+    string`, 'iterable', ['a', 'b', 'c']);
   failStatic('bad-iterable', [1, 2, 3]);
   failStatic('bad-iterable-type', 123);
 
@@ -393,7 +393,7 @@ describe('Typecheck', function () {
     number | string
 
     Got:
-    false`, 'generators', false);
+    boolean`, 'generators', false);
   ok('generators-with-next', 12);
   failWith(`
     Generator "gen" received an invalid next value.
@@ -402,7 +402,7 @@ describe('Typecheck', function () {
     number
 
     Got:
-    "foo"`, 'generators-with-next', 'foo');
+    string`, 'generators-with-next', 'foo');
   failWith(`
     Generator "gen" received an invalid next value.
 
@@ -410,7 +410,7 @@ describe('Typecheck', function () {
     number
 
     Got:
-    false`, 'generators-with-next', false);
+    boolean`, 'generators-with-next', false);
   failStatic('bad-generators', 'foo');
   failStatic('bad-generators-return', 'foo');
   ok('object-properties-function', 'bob', 'bob@example.com');
@@ -429,7 +429,7 @@ describe('Typecheck', function () {
 
     Got:
     {
-      "option1": true
+      option1: boolean;
     }`, 'bug-62-default-params', {option1: true});
   failWith(`
     Value of optional argument "options" violates contract.
@@ -442,8 +442,8 @@ describe('Typecheck', function () {
 
     Got:
     {
-      "option1": "foo",
-      "option2": "nope"
+      option1: string;
+      option2: string;
     }`, 'bug-62-default-params', {option1: 'foo', option2: 'nope'});
   failWith(`
     Value of optional argument "options" violates contract.
@@ -456,9 +456,9 @@ describe('Typecheck', function () {
 
     Got:
     {
-      "option1": "foo",
-      "option2": true,
-      "option3": "nope"
+      option1: string;
+      option2: boolean;
+      option3: string;
     }`, 'bug-62-default-params', {option1: 'foo', option2: true, option3: 'nope'});
   ok('bug-xxx-method-params');
   ok('bug-59-type-annotation-in-loop', 'foo');
@@ -473,7 +473,7 @@ describe('Typecheck', function () {
     string
 
     Got:
-    false`, 'object-method', false, 'bob@example.com');
+    boolean`, 'object-method', false, 'bob@example.com');
   ok('object-properties', 'bob', 'bob@example.com');
   failStatic('bad-object-properties', 'bob', 'bob@example.com');
   failWith(`
@@ -483,7 +483,7 @@ describe('Typecheck', function () {
     string
 
     Got:
-    false`, 'object-properties', false, 'bob@example.com');
+    boolean`, 'object-properties', false, 'bob@example.com');
   failWith(`
     Value of "user.email" violates contract.
 
@@ -491,7 +491,7 @@ describe('Typecheck', function () {
     string
 
     Got:
-    false`, 'object-properties', 'bob', false);
+    boolean`, 'object-properties', 'bob', false);
   ok('class-getter', 'alice');
   failStatic('bad-class-getter', 'alice');
   ok('class-setter', 'alice');
@@ -503,7 +503,7 @@ describe('Typecheck', function () {
     string
 
     Got:
-    123`, 'class-setter', 123);
+    number`, 'class-setter', 123);
   ok('class-properties-complex', 'sally', 'bob@example.com', {
     address: '123 Fake Street',
     country: 'FR',
@@ -520,7 +520,7 @@ describe('Typecheck', function () {
     "GB" | "US" | "FR" | "CA"
 
     Got:
-    "Invalid"`, 'class-properties-complex', 'sally', 'bob@example.com', {
+    string`, 'class-properties-complex', 'sally', 'bob@example.com', {
     address: '123 Fake Street',
     country: 'FR',
     pos: {
@@ -536,7 +536,7 @@ describe('Typecheck', function () {
     "GB" | "US" | "FR" | "CA"
 
     Got:
-    false`, 'class-properties-complex', 'sally', 'bob@example.com', {
+    boolean`, 'class-properties-complex', 'sally', 'bob@example.com', {
     address: '123 Fake Street',
     country: 'FR',
     pos: {
@@ -560,7 +560,7 @@ describe('Typecheck', function () {
     string
 
     Got:
-    false`, 'class-properties', false, 'bob@example.com');
+    boolean`, 'class-properties', false, 'bob@example.com');
   ok('string-literal-annotations', 'foo');
   ok('string-literal-annotations', 'bar');
   failWith(`
@@ -570,7 +570,7 @@ describe('Typecheck', function () {
     "foo" | "bar"
 
     Got:
-    "wat"`, 'string-literal-annotations', 'wat');
+    string`, 'string-literal-annotations', 'wat');
   failStatic('bad-string-literal-annotations', 'foo');
 
   ok('boolean-literal-annotations', true);
@@ -582,7 +582,7 @@ describe('Typecheck', function () {
     true | false
 
     Got:
-    "wat"`, 'boolean-literal-annotations', 'wat');
+    string`, 'boolean-literal-annotations', 'wat');
 
   ok('numeric-literal-annotations', 1);
   ok('numeric-literal-annotations', 2);
@@ -593,7 +593,7 @@ describe('Typecheck', function () {
     1 | 2
 
     Got:
-    3`, 'numeric-literal-annotations', 3);
+    number`, 'numeric-literal-annotations', 3);
 
   ok('enum', 'active');
   ok('enum', 'inactive');
@@ -604,7 +604,7 @@ describe('Typecheck', function () {
     "active" | "inactive"
 
     Got:
-    "pending"`, 'enum', 'pending');
+    string`, 'enum', 'pending');
 
   ok('pragma-ignore-statement', 'some string');
   ok('pragma-ignore-file', 'some string');
@@ -618,7 +618,7 @@ describe('Typecheck', function () {
     string[]
 
     Got:
-    [123]`, 'async-function', [123]);
+    number[]`, 'async-function', [123]);
   failStatic('bad-async-function', 'hello world');
   ok('class-getter', 'alice');
   ok("bug-xxx-export");
@@ -631,7 +631,7 @@ describe('Typecheck', function () {
     Symbol
 
     Got:
-    "wat"`, 'symbols', 'wat');
+    string`, 'symbols', 'wat');
   ok('export-typed-var', 'foo');
   ok('bug-48-export-star', 'wat');
   ok('typeof', {name: 'bob'});
@@ -643,7 +643,7 @@ describe('Typecheck', function () {
 
     Got:
     {
-      "name": false
+      name: boolean;
     }`, 'typeof', {name: false});
   ok('typeof-class', 'bob');
   failWith(`
@@ -653,7 +653,7 @@ describe('Typecheck', function () {
     typeof user
 
     Got:
-    "nope"`, 'typeof-class', false);
+    string`, 'typeof-class', false);
 
   ok('intersection', {name: 'bob', address: '123 Fake Street'});
   failWith(`
@@ -664,8 +664,8 @@ describe('Typecheck', function () {
 
     Got:
     {
-      "name": "bob",
-      "address": false
+      name: string;
+      address: boolean;
     }`, 'intersection', {name: 'bob', address: false});
 
   ok('set-entries', new Set([1, 2, 3]));
@@ -713,7 +713,7 @@ describe('Typecheck', function () {
     string[]
 
     Got:
-    ["foo", 123]`, 'array-type-annotation', ['foo', 123]);
+    [string, number]`, 'array-type-annotation', ['foo', 123]);
 
   ok('infer-member-expression-from-object', {name: "bob"});
   ok('logical-expression', 'foo');
@@ -747,7 +747,7 @@ describe('Typecheck', function () {
 
     Got:
     {
-      "a": 123
+      a: number;
     }`, "conditional-return-value", {a: 123});
 
 
@@ -770,7 +770,7 @@ describe('Typecheck', function () {
 
     Got:
     {
-      "foo": "bar"
+      foo: string;
     }`, "return-object-types", {foo: "bar"});
 
   ok("nested-object-types", {greeting: "hello world", id: 123, nested: {left: 10, right: 20}});
@@ -787,7 +787,7 @@ describe('Typecheck', function () {
 
     Got:
     {
-      "foo": "bar"
+      foo: string;
     }`, "nested-object-types", {foo: "bar"});
   failWith(`
     Value of argument "input" violates contract.
@@ -802,11 +802,12 @@ describe('Typecheck', function () {
 
     Got:
     {
-      "greeting": "hello world",
-      "id": 123,
-      "nested": {
-        "left": true, "right": false
-      }
+      greeting: string;
+      id: number;
+      nested: {
+        left: boolean;
+        right: boolean;
+      };
     }`, "nested-object-types", {greeting: "hello world", id: 123, nested: {left: true, right: false}});
   failWith(`
     Value of argument "input" violates contract.
@@ -821,11 +822,11 @@ describe('Typecheck', function () {
 
     Got:
     {
-      "greeting": "hello world",
-      "id": 123,
-      "nested": {
-        "left": 10
-      }
+      greeting: string;
+      id: number;
+      nested: {
+        left: number;
+      };
     }`, "nested-object-types", {greeting: "hello world", id: 123, nested: {left: 10}});
   failWith(`
     Value of argument "input" violates contract.
@@ -840,12 +841,12 @@ describe('Typecheck', function () {
 
     Got:
     {
-      "greeting": "hello world",
-      "id": "123",
-      "nested": {
-      "left": 10,
-      "right": 20
-    }
+      greeting: string;
+      id: string;
+      nested: {
+        left: number;
+        right: number;
+      };
     }
     `, "nested-object-types", {greeting: "hello world", id: "123", nested: {left: 10, right: 20}});
 
@@ -860,7 +861,7 @@ describe('Typecheck', function () {
 
     Got:
     {
-      "foo": "bar"
+      foo: string;
     }`, "complex-object-types", {foo: "bar"});
   failWith(`
     Value of argument "input" violates contract.
@@ -871,7 +872,7 @@ describe('Typecheck', function () {
     }
 
     Got:
-    "foo"`, "complex-object-types", "foo");
+    string`, "complex-object-types", "foo");
 
   ok("any-return-value");
   ok("callexpr-return-value");
@@ -900,7 +901,7 @@ describe('Typecheck', function () {
     string
 
     Got:
-    123`,
+    number`,
     "string-arguments",
     123);
 
@@ -924,7 +925,7 @@ describe('Typecheck', function () {
     string | Array<string>
 
     Got:
-    123`, "poly-args", 123);
+    number`, "poly-args", 123);
   failWith(`
     Value of argument \"fn\" violates contract.
 
@@ -932,7 +933,7 @@ describe('Typecheck', function () {
     Function | RegExp
 
     Got:
-    123`, "poly-args", "hello", 123);
+    number`, "poly-args", "hello", 123);
 
   ok("bug-7-class-support");
   ok("bug-8-class-support");
@@ -950,8 +951,8 @@ describe('Typecheck', function () {
 
     Got:
     {
-      "greeting": "hello world",
-      "id": "123"
+      greeting: string;
+      id: string;
     }`, "optional-properties", {greeting: "hello world", id: "123"});
   failWith(`
     Value of argument "input" violates contract.
@@ -963,8 +964,8 @@ describe('Typecheck', function () {
 
     Got:
     {
-      "greeting": "hello world",
-      "id": null
+      greeting: string;
+      id: null;
     }`, "optional-properties", {greeting: "hello world", id: null});
   failWith(`
     Value of argument "input" violates contract.
@@ -976,7 +977,7 @@ describe('Typecheck', function () {
 
     Got:
     {
-      "id": 123
+      id: number;
     }`, "optional-properties", {id: 123});
   failWith(`
     Value of argument "input" violates contract.
@@ -988,7 +989,7 @@ describe('Typecheck', function () {
 
     Got:
     {
-      "foo": "bar"
+      foo: string;
     }`, "optional-properties", {foo: "bar"});
   failWith(`
     Value of argument "input" violates contract.
@@ -999,7 +1000,7 @@ describe('Typecheck', function () {
     }
 
     Got:
-    "foo"`, "optional-properties", "foo");
+    string`, "optional-properties", "foo");
 
   ok("optional-arguments", "hello world");
   ok("optional-arguments", "hello world", 123);
@@ -1010,7 +1011,7 @@ describe('Typecheck', function () {
     number
 
     Got:
-    "123"`, "optional-arguments", "hello world", "123");
+    string`, "optional-arguments", "hello world", "123");
   failWith(`
     Value of optional argument "bar" violates contract.
 
@@ -1029,7 +1030,7 @@ describe('Typecheck', function () {
     number
 
     Got:
-    "123"`, "default-arguments", "hello world", "123");
+    string`, "default-arguments", "hello world", "123");
   failWith(`
     Value of argument "bar" violates contract.
 
@@ -1047,7 +1048,7 @@ describe('Typecheck', function () {
     T.Object | T.Array
 
     Got:
-    "hello"`, "qualified-types", "hello")
+    string`, "qualified-types", "hello")
 
   ok("var-declarations", ["abc", "123"])
   failWith(`
@@ -1057,7 +1058,7 @@ describe('Typecheck', function () {
     Array
 
     Got:
-    "abc"`, "var-declarations", "abc")
+    string`, "var-declarations", "abc")
   failWith(`
     Value of variable "b" violates contract.
 
@@ -1065,7 +1066,7 @@ describe('Typecheck', function () {
     string
 
     Got:
-    123`, "var-declarations", ["abc", 123])
+    number`, "var-declarations", ["abc", 123])
 
   ok("var-declarations-2", ["abc", "123"])
   ok("var-declarations-2", ["abc", "1"])
@@ -1076,7 +1077,7 @@ describe('Typecheck', function () {
     Array
 
     Got:
-    "abc"`, "var-declarations-2", "abc")
+    string`, "var-declarations-2", "abc")
   failWith(`
     Value of variable "b" violates contract.
 
@@ -1084,7 +1085,7 @@ describe('Typecheck', function () {
     string
 
     Got:
-    123`, "var-declarations-2", ["abc", 123])
+    number`, "var-declarations-2", ["abc", 123])
 
   ok("arrow-function", 123);
   ok("arrow-function-2", 123);
@@ -1096,7 +1097,7 @@ describe('Typecheck', function () {
     number
 
     Got:
-    "abc"`, "arrow-function", "abc")
+    string`, "arrow-function", "abc")
   failWith(`
     Value of argument "arg" violates contract.
 
@@ -1104,7 +1105,7 @@ describe('Typecheck', function () {
     number
 
     Got:
-    "abc"`, "arrow-function-2", "abc")
+    string`, "arrow-function-2", "abc")
 
   ok("bug-30-conditional-return");
 
