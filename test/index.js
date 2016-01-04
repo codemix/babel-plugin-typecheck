@@ -386,7 +386,39 @@ describe('Typecheck', function () {
   ok('bug-68-return-string-literal');
   ok('indexers', foo => null);
   ok('object-pattern', {a: 'foo', b: 34});
-  ok('object-pattern-complex', {a: 'foo', b: 34, d: {e: 'bar', g: false, a: 123}});
+  failWith(`
+    Value of argument 0 violates contract.
+
+    Expected:
+    { a: string;
+      b: number;
+    }
+
+    Got:
+    { a: string;
+      b: void;
+    }
+  `, 'object-pattern', {a: 'foo'});
+  ok('object-pattern-complex', {a: 'foo', b: 34, d: {e: 'bar', g: 123, a: 123}});
+  failWith(`
+    Value of argument 0 violates contract.
+
+    Expected:
+    { a: string;
+      b: number;
+      d: { e: string;
+        g: number;
+      };
+    }
+
+    Got:
+    { a: string;
+      b: number;
+      d: { e: string;
+        g: boolean;
+      };
+    }
+  `, 'object-pattern-complex', {a: 'foo', b: 34, d: {e: 'bar', g: false, a: 123}});
   ok('generators', 'foo');
   failWith(`
     Function "gen" yielded an invalid value.
@@ -893,7 +925,7 @@ describe('Typecheck', function () {
     string
 
     Got:
-    undefined`,
+    void`,
     "string-arguments");
 
   failWith(`

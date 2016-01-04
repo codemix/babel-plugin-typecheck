@@ -618,7 +618,7 @@ export default function ({types: t, template}): Object {
                 return 'null';
               }
               else if (input === undefined) {
-                return 'undefined';
+                return 'void';
               }
               else if (typeof input === 'string' || typeof input === 'number' || typeof input === 'boolean') {
                 return typeof input;
@@ -1650,7 +1650,6 @@ export default function ({types: t, template}): Object {
       return t.voidTypeAnnotation();
     }
     const {node, scope} = path;
-
     if (node.type === 'TypeAlias') {
       return node.right;
     }
@@ -2794,10 +2793,14 @@ export default function ({types: t, template}): Object {
 
     node.hasBeenTypeChecked = true;
     node.savedTypeAnnotation = node.typeAnnotation;
+    let check;
     if (node.type === 'ObjectPattern') {
-      return;
+      node.name = path.key;
+      check = checkAnnotation(t.memberExpression(t.identifier('arguments'), t.numericLiteral(path.key), true), node.typeAnnotation, scope);
     }
-    let check = checkAnnotation(node, node.typeAnnotation, scope);
+    else {
+      check = checkAnnotation(node, node.typeAnnotation, scope);
+    }
     if (!check) {
       return;
     }
@@ -2905,7 +2908,7 @@ export default function ({types: t, template}): Object {
 
   function paramTypeErrorMessage (node: Node, context: VisitorContext, typeAnnotation: TypeAnnotation = node.typeAnnotation): Node {
     const name = node.name;
-    const message = `Value of ${node.optional ? 'optional ' : ''}argument "${name}" violates contract.\n\nExpected:\n${humanReadableType(typeAnnotation)}\n\nGot:\n`;
+    const message = `Value of ${node.optional ? 'optional ' : ''}argument ${JSON.stringify(name)} violates contract.\n\nExpected:\n${humanReadableType(typeAnnotation)}\n\nGot:\n`;
 
     return t.binaryExpression(
       '+',
