@@ -12,6 +12,8 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('bug-96-iterate-array');
+
   ok('object-indexer-basic', 'foo', 'bar');
   failWith(`
     Function "demo" return value violates contract.

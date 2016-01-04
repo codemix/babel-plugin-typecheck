@@ -72,7 +72,7 @@ export default function ({types: t, template}): Object {
   const checkIsSet: (() => Node) = expression(`input instanceof Set`);
   const checkIsClass: (() => Node) = expression(`typeof input === 'function' && input.prototype && input.prototype.constructor === input`);
   const checkIsGenerator: (() => Node) = expression(`typeof input === 'function' && input.generator`);
-  const checkIsIterable: (() => Node) = expression(`input && typeof input[Symbol.iterator] === 'function'`);
+  const checkIsIterable: (() => Node) = expression(`input && (typeof input[Symbol.iterator] === 'function' || Array.isArray(input))`);
   const checkIsObject: (() => Node) = expression(`input != null && typeof input === 'object'`);
   const checkNotNull: (() => Node) = expression(`input != null`);
   const checkEquals: (() => Node) = expression(`input === expected`);
@@ -770,10 +770,10 @@ export default function ({types: t, template}): Object {
 
   function buildErrorMessage (message: string, expected: TypeAnnotation, got: ?Node) {
     if (got) {
-      return message + '\nExpected:\n' + humanReadableType(expected) + '\n\nGot:\n' + humanReadableType(got);
+      return message + '\n\nExpected:\n' + humanReadableType(expected) + '\n\nGot:\n' + humanReadableType(got);
     }
     else {
-      return message + '\nExpected:\n' + humanReadableType(expected);
+      return message + '\n\nExpected:\n' + humanReadableType(expected);
     }
   }
 
