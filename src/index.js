@@ -22,6 +22,10 @@ type TypeAnnotation = {
   type: string;
 };
 
+type VisitorContext = {
+  inspect: Identifier;
+};
+
 interface StringLiteralTypeAnnotation extends TypeAnnotation {
   type: 'StringLiteralTypeAnnotation';
 }
@@ -68,7 +72,7 @@ export default function ({types: t, template}): Object {
   const checkIsSet: (() => Node) = expression(`input instanceof Set`);
   const checkIsClass: (() => Node) = expression(`typeof input === 'function' && input.prototype && input.prototype.constructor === input`);
   const checkIsGenerator: (() => Node) = expression(`typeof input === 'function' && input.generator`);
-  const checkIsIterable: (() => Node) = expression(`input && typeof input[Symbol.iterator] === 'function'`);
+  const checkIsIterable: (() => Node) = expression(`input && (typeof input[Symbol.iterator] === 'function' || Array.isArray(input))`);
   const checkIsObject: (() => Node) = expression(`input != null && typeof input === 'object'`);
   const checkNotNull: (() => Node) = expression(`input != null`);
   const checkEquals: (() => Node) = expression(`input === expected`);
@@ -113,9 +117,8 @@ export default function ({types: t, template}): Object {
   `);
 
   const readableName: (() => Node) = expression(`
-    input === null ? 'null' : typeof input === 'object' && input.constructor ? input.constructor.name || '[Unknown Object]' : typeof input
+    inspect(input)
   `);
-
   const checkMapKeys: (() => Node) = expression(`
     input instanceof Map && Array.from(input.keys()).every(key => keyCheck)
   `);
@@ -221,20 +224,20 @@ export default function ({types: t, template}): Object {
     },
 
     Function: {
-      enter (path: NodePath): void {
+      enter (path: NodePath, context: VisitorContext): void {
         if (maybeSkip(path)) {
           return;
         }
 
         const {node, scope} = path;
-        const paramChecks = collectParamChecks(path);
+        const paramChecks = collectParamChecks(path, context);
         if (node.type === "ArrowFunctionExpression" && node.expression) {
           node.expression = false;
           node.body = t.blockStatement([t.returnStatement(node.body)]);
         }
         if (node.returnType) {
-          createFunctionReturnGuard(path);
-          createFunctionYieldGuards(path);
+          createFunctionReturnGuard(path, context);
+          createFunctionYieldGuards(path, context);
         }
         node.body.body.unshift(...paramChecks);
         node.savedTypeAnnotation = node.returnType;
@@ -252,7 +255,12 @@ export default function ({types: t, template}): Object {
           if (node.generator && isGeneratorAnnotation(annotation) && annotation.typeParameters && annotation.typeParameters.params.length > 1) {
             annotation = annotation.typeParameters.params[1];
           }
-          throw path.buildCodeFrameError(`Function ${node.id ? `"${node.id.name}" ` : ''}did not return a value, expected ${humanReadableType(annotation)}`);
+          throw path.buildCodeFrameError(
+            buildErrorMessage(
+              `Function ${node.id ? `"${node.id.name}" ` : ''}did not return a value.`,
+              annotation
+            )
+          );
         }
         if (node.nextGuardCount) {
           path.get('body').get('body')[0].insertBefore(node.nextGuard);
@@ -266,7 +274,7 @@ export default function ({types: t, template}): Object {
       }
     },
 
-    YieldExpression (path: NodePath): void {
+    YieldExpression (path: NodePath, context: VisitorContext): void {
       const fn = path.getFunctionParent();
       if (!fn) {
         return;
@@ -291,7 +299,13 @@ export default function ({types: t, template}): Object {
         return;
       }
       else if (ok === false) {
-        throw path.buildCodeFrameError(`Function ${fn.node.id ? `"${fn.node.id.name}" ` : ''}yielded an invalid type, expected ${humanReadableType(yieldType)} got ${humanReadableType(getAnnotation(path.get('argument')))}`);
+        throw path.buildCodeFrameError(
+          buildErrorMessage(
+            `Function ${fn.node.id ? `"${fn.node.id.name}" ` : ''}yielded an invalid type.`,
+            yieldType,
+            getAnnotation(path.get('argument'))
+          )
+        );
       }
       fn.node.yieldGuardCount++;
       if (fn.node.yieldGuard) {
@@ -315,7 +329,7 @@ export default function ({types: t, template}): Object {
     },
 
 
-    ReturnStatement (path: NodePath): void {
+    ReturnStatement (path: NodePath, context: VisitorContext): void {
       const fn = path.getFunctionParent();
       if (!fn) {
         return;
@@ -331,7 +345,12 @@ export default function ({types: t, template}): Object {
       }
       if (!node.argument) {
         if (maybeNullableAnnotation(returnType) === false) {
-          throw path.buildCodeFrameError(`Function ${fn.node.id ? `"${fn.node.id.name}" ` : ''}did not return a value, expected ${humanReadableType(returnType)}`);
+          throw path.buildCodeFrameError(
+            buildErrorMessage(
+              `Function ${fn.node.id ? `"${fn.node.id.name}" ` : ''}did not return a value.`,
+              returnType
+            )
+          );
         }
         return;
       }
@@ -347,7 +366,13 @@ export default function ({types: t, template}): Object {
         return;
       }
       else if (ok === false) {
-        throw path.buildCodeFrameError(`Function ${fn.node.id ? `"${fn.node.id.name}" ` : ''}returned an invalid type, expected ${humanReadableType(annotation)} got ${humanReadableType(getAnnotation(path.get('argument')))}`);
+        throw path.buildCodeFrameError(
+          buildErrorMessage(
+            `Function ${fn.node.id ? `"${fn.node.id.name}" ` : ''}returned an invalid type.`,
+            annotation,
+            getAnnotation(path.get('argument'))
+          )
+        );
       }
       fn.node.returnGuardCount++;
       const returner = t.returnStatement(t.callExpression(fn.node.returnGuardName, [node.argument]));
@@ -355,7 +380,7 @@ export default function ({types: t, template}): Object {
       path.replaceWith(returner);
     },
 
-    VariableDeclaration (path: NodePath): void {
+    VariableDeclaration (path: NodePath, context: VisitorContext): void {
       if (maybeSkip(path)) {
         return;
       }
@@ -375,13 +400,19 @@ export default function ({types: t, template}): Object {
           continue;
         }
         else if (ok === false) {
-          throw path.buildCodeFrameError(`Invalid assignment value, expected ${humanReadableType(id.typeAnnotation)} got ${humanReadableType(getAnnotation(declarations[i]))}`);
+          throw path.buildCodeFrameError(
+            buildErrorMessage(
+              `Invalid assignment value for "${id.name}".`,
+              id.typeAnnotation,
+              getAnnotation(declarations[i])
+            )
+          );
         }
         const check = checkAnnotation(id, id.typeAnnotation, scope);
         if (check) {
           collected.push(guard({
             check,
-            message: varTypeErrorMessage(id, scope)
+            message: varTypeErrorMessage(id, context)
           }));
         }
       }
@@ -418,7 +449,7 @@ export default function ({types: t, template}): Object {
       }
     },
 
-    AssignmentExpression (path: NodePath): void {
+    AssignmentExpression (path: NodePath, context: VisitorContext): void {
       if (maybeSkip(path)) {
         return;
       }
@@ -461,7 +492,13 @@ export default function ({types: t, template}): Object {
         return;
       }
       else if (ok === false) {
-        throw path.buildCodeFrameError(`Invalid assignment value, expected ${humanReadableType(annotation)} got ${humanReadableType(getAnnotation(right))}`);
+        throw path.buildCodeFrameError(
+          buildErrorMessage(
+            `Invalid assignment value for "${humanReadableType(id)}".`,
+            annotation,
+            getAnnotation(right)
+          )
+        );
       }
       const check = checkAnnotation(id, annotation, scope);
       if (!id.typeAnnotation) {
@@ -472,7 +509,7 @@ export default function ({types: t, template}): Object {
         const parent = path.getStatementParent();
         parent.insertAfter(guard({
           check,
-          message: varTypeErrorMessage(id, scope)
+          message: varTypeErrorMessage(id, context)
         }));
       }
     },
@@ -498,7 +535,7 @@ export default function ({types: t, template}): Object {
       id.savedTypeAnnotation = path.getTypeAnnotation();
     },
 
-    ForOfStatement (path: NodePath): void {
+    ForOfStatement (path: NodePath, context: VisitorContext): void {
       if (maybeSkip(path)) {
         return;
       }
@@ -509,7 +546,7 @@ export default function ({types: t, template}): Object {
       if (rightAnnotation.type !== 'VoidTypeAnnotation') {
         const ok: ?boolean = maybeIterableAnnotation(rightAnnotation);
         if (ok === false) {
-          throw path.buildCodeFrameError(`Cannot iterate ${humanReadableType(rightAnnotation)}`);
+          throw path.buildCodeFrameError(`Cannot iterate ${humanReadableType(rightAnnotation)}.`);
         }
       }
       let id: ?Identifier;
@@ -527,8 +564,8 @@ export default function ({types: t, template}): Object {
         check: checks.iterable({input: id}),
         message: t.binaryExpression(
           '+',
-          t.stringLiteral(`Expected ${generate(right.node).code} to be iterable, got `),
-          readableName({input: id})
+          t.stringLiteral(`Expected ${humanReadableType(right.node)} to be iterable, got `),
+          readableName({inspect: context.inspect, input: id})
         )
       }));
 
@@ -538,7 +575,13 @@ export default function ({types: t, template}): Object {
 
       const annotation: TypeAnnotation = rightAnnotation.typeParameters.params[0];
       if (compareAnnotations(annotation, leftAnnotation) === false) {
-        throw path.buildCodeFrameError(`Invalid iterator type, expected ${humanReadableType(annotation)} got ${humanReadableType(leftAnnotation)}`);
+        throw path.buildCodeFrameError(
+          buildErrorMessage(
+            `Invalid iterator type.`,
+            annotation,
+            leftAnnotation
+          )
+        );
       }
     }
   };
@@ -555,7 +598,68 @@ export default function ({types: t, template}): Object {
             return;
           }
         }
-        path.traverse(visitors);
+        const inspect = path.scope.generateUidIdentifier('inspect');
+        const requiresHelpers = {
+          inspect: false
+        };
+        const context = {
+          get inspect () {
+            requiresHelpers.inspect = true;
+            return inspect;
+          }
+        };
+        path.traverse(visitors, context);
+
+        if (requiresHelpers.inspect) {
+          const body = path.get('body');
+          body[body.length - 1].insertAfter(template(`
+            function id (input) {
+              if (input === null) {
+                return 'null';
+              }
+              else if (input === undefined) {
+                return 'void';
+              }
+              else if (typeof input === 'string' || typeof input === 'number' || typeof input === 'boolean') {
+                return typeof input;
+              }
+              else if (Array.isArray(input)) {
+                if (input.length > 0) {
+                  var first = id(input[0]);
+                  if (input.every(item => id(item) === first)) {
+                    return first.trim() + '[]';
+                  }
+                  else {
+                    return '[' + input.map(id).join(', ') + ']';
+                  }
+                }
+                else {
+                  return 'Array';
+                }
+              }
+              else {
+                var keys = Object.keys(input);
+                if (!keys.length) {
+                  if (input.constructor && input.constructor.name && input.constructor.name !== 'Object') {
+                    return input.constructor.name;
+                  }
+                  else {
+                    return 'Object';
+                  }
+                }
+                var entries = keys.map(key => {
+                  return (/^([A-Z_$][A-Z0-9_$]*)$/i.test(key) ? key : JSON.stringify(key)) + ': ' + id(input[key]) + ';';
+                }).join('\\n  ');
+                if (input.constructor && input.constructor.name && input.constructor.name !== 'Object') {
+                  return input.constructor.name + ' {\\n  ' + entries + '\\n}';
+                }
+                else {
+                  return '{ ' + entries + '\\n}';
+                }
+              }
+            }
+          `)({id: inspect}));
+        }
       }
     }
   }
@@ -563,7 +667,7 @@ export default function ({types: t, template}): Object {
   /**
    * Create a function which can verify the return type for a function.
    */
-  function createFunctionReturnGuard (path: NodePath): void {
+  function createFunctionReturnGuard (path: NodePath, context: VisitorContext): void {
     const {node, scope} = path;
     let annotation = node.returnType;
     if (annotation.type === 'TypeAnnotation') {
@@ -580,7 +684,7 @@ export default function ({types: t, template}): Object {
         id,
         name,
         check,
-        message: returnTypeErrorMessage(path, path.node, id)
+        message: returnTypeErrorMessage(path, path.node, id, context)
       });
       node.returnGuard.hasBeenTypeChecked = true;
       node.returnGuardName = name;
@@ -588,7 +692,7 @@ export default function ({types: t, template}): Object {
     }
   }
 
-  function createFunctionYieldGuards (path: NodePath) {
+  function createFunctionYieldGuards (path: NodePath, context: VisitorContext) {
     const {node, scope} = path;
     let annotation = node.returnType;
     if (annotation.type === 'NullableTypeAnnotation' || annotation.type === 'TypeAnnotation') {
@@ -616,7 +720,7 @@ export default function ({types: t, template}): Object {
           id,
           name,
           check,
-          message: yieldTypeErrorMessage(node, yieldType, id)
+          message: yieldTypeErrorMessage(node, yieldType, id, context)
         });
         node.yieldGuardName = name;
         node.yieldGuardCount = 0;
@@ -633,7 +737,7 @@ export default function ({types: t, template}): Object {
           id,
           name,
           check,
-          message: yieldNextTypeErrorMessage(node, nextType, id)
+          message: yieldNextTypeErrorMessage(node, nextType, id, context)
         });
         node.nextGuardName = name;
         node.nextGuardCount = 0;
@@ -662,6 +766,15 @@ export default function ({types: t, template}): Object {
       annotation = annotation.typeAnnotation;
     }
     return annotation.type === 'GenericTypeAnnotation' && annotation.id.name === 'Generator';
+  }
+
+  function buildErrorMessage (message: string, expected: TypeAnnotation, got: ?Node) {
+    if (got) {
+      return message + '\n\nExpected:\n' + humanReadableType(expected) + '\n\nGot:\n' + humanReadableType(got);
+    }
+    else {
+      return message + '\n\nExpected:\n' + humanReadableType(expected);
+    }
   }
 
   function createChecks (): Object {
@@ -700,7 +813,9 @@ export default function ({types: t, template}): Object {
       int32: expression(`typeof input === 'number' && !isNaN(input) && input >= -2147483648 && input <= 2147483647 && input === Math.floor(input)`),
       uint32: expression(`typeof input === 'number' && !isNaN(input) && input >= 0 && input <= 4294967295 && input === Math.floor(input)`),
       float32: expression(`typeof input === 'number' && !isNaN(input) && input >= -3.40282347e+38 && input <= 3.40282347e+38`),
-      float64: expression(`typeof input === 'number' && !isNaN(input)`)
+      float64: expression(`typeof input === 'number' && !isNaN(input)`),
+      double: expression(`typeof input === 'number' && !isNaN(input)`)
+
 
     };
   }
@@ -748,6 +863,9 @@ export default function ({types: t, template}): Object {
           return null;
         }
         else if (type.name === 'float64' && !scope.hasBinding('float64')) {
+          return null;
+        }
+        else if (type.name === 'double' && !scope.hasBinding('double')) {
           return null;
         }
         return maybeInstanceOfAnnotation(getAnnotation(path), type, annotation.typeParameters ? annotation.typeParameters.params : []);
@@ -1267,7 +1385,7 @@ export default function ({types: t, template}): Object {
       return checkObjectPattern({input, properties, scope});
     }
     const propNames = [];
-    const check = properties.reduce((expr, prop, index) => {
+    const check = properties.length === 0 ? checkIsObject({input}) : properties.reduce((expr, prop, index) => {
       const target = prop.key.type === 'Identifier' ? t.memberExpression(input, prop.key) : t.memberExpression(input, prop.key, true);
       propNames.push(prop.key.type === 'Identifier' ? t.stringLiteral(prop.key.name) : prop.key);
       let check = checkAnnotation(target, prop.value, scope);
@@ -1288,7 +1406,7 @@ export default function ({types: t, template}): Object {
       else {
         return expr;
       }
-    }, checkIsObject({input}));
+    }, checkNotNull({input}));
 
     if (indexers.length) {
       return indexers.reduceRight((expr, indexer) => {
@@ -1431,6 +1549,9 @@ export default function ({types: t, template}): Object {
         else if (annotation.id.name === 'float64' && !scope.hasBinding('float64')) {
           return checks.float64({input});
         }
+        else if (annotation.id.name === 'double' && !scope.hasBinding('double')) {
+          return checks.double({input});
+        }
         else if (annotation.id.name === 'Symbol' && !scope.hasBinding('Symbol')) {
           return checks.symbol({input});
         }
@@ -1529,7 +1650,6 @@ export default function ({types: t, template}): Object {
       return t.voidTypeAnnotation();
     }
     const {node, scope} = path;
-
     if (node.type === 'TypeAlias') {
       return node.right;
     }
@@ -2005,16 +2125,18 @@ export default function ({types: t, template}): Object {
   }
 
   /**
-   * Returns `true` if the annotation is definitely for an array,
-   * otherwise `false`.
+   * Determine whether the given annotation is for an array.
    */
-  function isStrictlyArrayAnnotation (annotation: TypeAnnotation): boolean {
+  function isStrictlyArrayAnnotation (annotation: TypeAnnotation): ?boolean {
     switch (annotation.type) {
+      case 'ArrayTypeAnnotation':
+      case 'TupleTypeAnnotation':
+        return true;
       case 'TypeAnnotation':
       case 'FunctionTypeParam':
         return isStrictlyArrayAnnotation(annotation.typeAnnotation);
       case 'GenericTypeAnnotation':
-        return annotation.id.name === 'Array';
+        return annotation.id.name === 'Array' ? true : null;
       case 'UnionTypeAnnotation':
         return annotation.types.every(isStrictlyArrayAnnotation);
       default:
@@ -2448,7 +2570,7 @@ export default function ({types: t, template}): Object {
     }
   }
 
- /**
+  /**
    * Returns `true` if the annotation is compatible with an iterable,
    * `false` if it definitely isn't, or `null` if we're not sure.
    */
@@ -2531,7 +2653,7 @@ export default function ({types: t, template}): Object {
     }
   }
 
-  function humanReadableType (annotation: TypeAnnotation): string {
+  function humanReadableType (annotation: Node|TypeAnnotation): string {
     switch (annotation.type) {
       case 'TypeAnnotation':
       case 'FunctionTypeParam':
@@ -2540,8 +2662,29 @@ export default function ({types: t, template}): Object {
       case 'FunctionTypeAnnotation':
         // @fixme babel doesn't seem to like generating FunctionTypeAnnotations yet
         return `(${annotation.params.map(humanReadableType).join(', ')}) => ${humanReadableType(annotation.returnType)}`;
+      case 'GenericTypeAnnotation':
+        const path = getNodePath(annotation);
+        const checker = path && getTypeChecker(annotation.id, path.scope);
+        if (checker && checker.node.savedTypeAnnotation) {
+          return humanReadableType(checker.node.savedTypeAnnotation);
+        }
+        else {
+          return generate(annotation).code;
+        }
       default:
         return generate(annotation).code;
+    }
+  }
+
+  /**
+   * Get the path directly from a node.
+   */
+  function getNodePath (node: Node): ?NodePath {
+    if (node._paths && node._paths.length) {
+      return node._paths[0];
+    }
+    else {
+      return null;
     }
   }
 
@@ -2626,34 +2769,38 @@ export default function ({types: t, template}): Object {
     return null;
   }
 
-  function collectParamChecks (path: NodePath): Node[] {
+  function collectParamChecks (path: NodePath, context: VisitorContext): Node[] {
     return path.get('params').map((param) => {
       const {node} = param;
       if (node.type === 'AssignmentPattern') {
         if (node.left.typeAnnotation) {
-          return createDefaultParamGuard(param);
+          return createDefaultParamGuard(param, context);
         }
       }
       else if (node.type === 'RestElement') {
         if (node.typeAnnotation) {
-          return createRestParamGuard(param);
+          return createRestParamGuard(param, context);
         }
       }
       else if (node.typeAnnotation) {
-        return createParamGuard(param);
+        return createParamGuard(param, context);
       }
     }).filter(identity);
   }
 
-  function createParamGuard (path: NodePath): ?Node {
+  function createParamGuard (path: NodePath, context: VisitorContext): ?Node {
     const {node, scope} = path;
 
     node.hasBeenTypeChecked = true;
     node.savedTypeAnnotation = node.typeAnnotation;
+    let check;
     if (node.type === 'ObjectPattern') {
-      return;
+      node.name = path.key;
+      check = checkAnnotation(t.memberExpression(t.identifier('arguments'), t.numericLiteral(path.key), true), node.typeAnnotation, scope);
     }
-    let check = checkAnnotation(node, node.typeAnnotation, scope);
+    else {
+      check = checkAnnotation(node, node.typeAnnotation, scope);
+    }
     if (!check) {
       return;
     }
@@ -2664,30 +2811,42 @@ export default function ({types: t, template}): Object {
         check
       );
     }
-    const message = paramTypeErrorMessage(node, scope);
+    const message = paramTypeErrorMessage(node, context);
     return guard({
       check,
       message
     });
   }
 
-  function createDefaultParamGuard (path: NodePath): ?Node {
+  function createDefaultParamGuard (path: NodePath, context: VisitorContext): ?Node {
     const {node, scope} = path;
     const {left: id, right: value} = node;
     const ok = staticCheckAnnotation(path.get('right'), id.typeAnnotation);
     if (ok === false) {
-      throw path.buildCodeFrameError(`Invalid default value for argument "${id.name}", expected ${humanReadableType(id.typeAnnotation)}.`);
+      throw path.buildCodeFrameError(
+        buildErrorMessage(
+          `Invalid default value for argument "${id.name}".`,
+          id.typeAnnotation,
+          getAnnotation(path.get('right'))
+        )
+      );
     }
-    return createParamGuard(path.get('left'));
+    return createParamGuard(path.get('left'), context);
   }
 
-  function createRestParamGuard (path: NodePath): ?Node {
+  function createRestParamGuard (path: NodePath, context: VisitorContext): ?Node {
     const {node, scope} = path;
     const {argument: id} = node;
     id.hasBeenTypeChecked = true;
     node.savedTypeAnnotation = node.typeAnnotation;
-    if (!isStrictlyArrayAnnotation(node.typeAnnotation)) {
-      throw path.buildCodeFrameError(`Invalid type annotation for rest argument "${id.name}", expected an Array, got: ${humanReadableType(node.typeAnnotation)}.`);
+    if (isStrictlyArrayAnnotation(node.typeAnnotation) === false) {
+      throw path.buildCodeFrameError(
+        buildErrorMessage(
+          `Invalid type annotation for rest argument "${id.name}".`,
+          t.genericTypeAnnotation(t.identifier('Array')),
+          node.typeAnnotation
+        )
+      );
     }
     let check = checkAnnotation(id, node.typeAnnotation, scope);
     if (!check) {
@@ -2700,14 +2859,14 @@ export default function ({types: t, template}): Object {
         check
       );
     }
-    const message = paramTypeErrorMessage(id, scope, node.typeAnnotation);
+    const message = paramTypeErrorMessage(id, context, node.typeAnnotation);
     return guard({
       check,
       message
     });
   }
 
-  function returnTypeErrorMessage (path: NodePath, fn: Node, id: ?Identifier|Literal): Node {
+  function returnTypeErrorMessage (path: NodePath, fn: Node, id: ?Identifier|Literal, context: VisitorContext): Node {
     const {node, scope} = path;
     const name = fn.id ? fn.id.name : '';
     let annotation = fn.returnType;
@@ -2717,63 +2876,64 @@ export default function ({types: t, template}): Object {
     if (fn.generator && isGeneratorAnnotation(annotation) && annotation.typeParameters && annotation.typeParameters.params.length > 1) {
       annotation = annotation.typeParameters.params[1];
     }
-    const message = `Function ${name ? `"${name}" ` : ''}return value violates contract, expected ${humanReadableType(annotation)} got `;
+    const message = `Function ${name ? `"${name}" ` : ''}return value violates contract.\n\nExpected:\n${humanReadableType(annotation)}\n\nGot:\n`;
 
     return t.binaryExpression(
       '+',
       t.stringLiteral(message),
-      id ? readableName({input: id}) : node.argument ? readableName({input: node.argument}) : t.stringLiteral('undefined')
+      id ? readableName({inspect: context.inspect, input: id}) : node.argument ? readableName({inspect: context.inspect, input: node.argument}) : t.stringLiteral('undefined')
     );
   }
 
-  function yieldTypeErrorMessage (fn: Node, annotation: TypeAnnotation, id: Identifier|Literal): Node {
+  function yieldTypeErrorMessage (fn: Node, annotation: TypeAnnotation, id: Identifier|Literal, context: VisitorContext): Node {
     const name = fn.id ? fn.id.name : '';
-    const message = `Function ${name ? `"${name}" ` : ''} yielded an invalid value, expected ${humanReadableType(annotation)} got `;
+    const message = `Function ${name ? `"${name}" ` : ''}yielded an invalid value.\n\nExpected:\n${humanReadableType(annotation)}\n\nGot:\n`;
 
     return t.binaryExpression(
       '+',
       t.stringLiteral(message),
-      readableName({input: id})
+      readableName({inspect: context.inspect, input: id})
     );
   }
-  function yieldNextTypeErrorMessage (fn: Node, annotation: TypeAnnotation, id: Identifier|Literal): Node {
+  function yieldNextTypeErrorMessage (fn: Node, annotation: TypeAnnotation, id: Identifier|Literal, context: VisitorContext): Node {
     const name = fn.id ? fn.id.name : '';
-    const message = `Generator ${name ? `"${name}" ` : ''}received an invalid next value, expected ${humanReadableType(annotation)} got `;
+    const message = `Generator ${name ? `"${name}" ` : ''}received an invalid next value.\n\nExpected:\n${humanReadableType(annotation)}\n\nGot:\n`;
 
     return t.binaryExpression(
       '+',
       t.stringLiteral(message),
-      readableName({input: id})
+      readableName({inspect: context.inspect, input: id})
     );
   }
 
-  function paramTypeErrorMessage (node: Node, scope: Scope, typeAnnotation: TypeAnnotation = node.typeAnnotation): Node {
+  function paramTypeErrorMessage (node: Node, context: VisitorContext, typeAnnotation: TypeAnnotation = node.typeAnnotation): Node {
     const name = node.name;
-    const message = `Value of ${node.optional ? 'optional ' : ''}argument "${name}" violates contract, expected ${humanReadableType(typeAnnotation)} got `;
+    const message = `Value of ${node.optional ? 'optional ' : ''}argument ${JSON.stringify(name)} violates contract.\n\nExpected:\n${humanReadableType(typeAnnotation)}\n\nGot:\n`;
 
     return t.binaryExpression(
       '+',
       t.stringLiteral(message),
-      readableName({input: node})
+      readableName({inspect: context.inspect, input: node})
     );
   }
 
-  function varTypeErrorMessage (node: Node, scope: Scope, annotation?: TypeAnnotation = node.typeAnnotation): Node {
+  function varTypeErrorMessage (node: Node, context: VisitorContext): Node {
+    const annotation: TypeAnnotation = node.typeAnnotation;
     if (node.type === 'Identifier') {
       const name = node.name;
-      const message = `Value of variable "${name}" violates contract, expected ${humanReadableType(annotation)} got `;
+      const message = `Value of variable "${name}" violates contract.\n\nExpected:\n${humanReadableType(annotation)}\n\nGot:\n`;
       return t.binaryExpression(
         '+',
         t.stringLiteral(message),
-        readableName({input: node})
+        readableName({inspect: context.inspect, input: node})
       );
     }
     else {
-      const message = `Value of "${generate(node).code}" violates contract, expected ${humanReadableType(annotation)} got `;
+      const message = `Value of "${humanReadableType(node)}" violates contract.\n\nExpected:\n${humanReadableType(annotation)}\n\nGot:\n`;
       return t.binaryExpression(
         '+',
         t.stringLiteral(message),
-        readableName({input: node})
+        readableName({inspect: context.inspect, input: node})
       );
     }
   }

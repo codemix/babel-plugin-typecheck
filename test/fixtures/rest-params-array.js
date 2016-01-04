@@ -1,8 +1,8 @@
-export default function countArgs(...args: number[]): number {
+export default function countArgs(...args: Array<number>): number {
 	return args.length;
 }
 
-export default function countArgs2(...args2: number[]|string[]): number {
+export default function countArgs2(...args2: Array<number>|Array<string>): number {
 	return args2.length;
 }
 
