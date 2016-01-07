@@ -12,6 +12,8 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('bug-98-false-positive-destructuring', {date: 'string', time: 'string'});
+  ok('bug-98-false-positive-destructuring-expression', {date: 'string', time: 'string'});
   ok('bug-96-iterate-array');
 
   ok('object-indexer-basic', 'foo', 'bar');

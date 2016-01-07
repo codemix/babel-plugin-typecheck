@@ -223,6 +223,35 @@ export default function ({types: t, template}): Object {
       ]);
     },
 
+    ArrowFunctionExpression (path: NodePath) {
+      // Look for destructuring args with annotations.
+
+      const params: NodePath[] = path.get('params');
+      for (let param of params) {
+        if (param.isObjectPattern() && param.node.typeAnnotation) {
+          const {scope} = path.get('body');
+          const id = scope.generateUidIdentifier(`arg${param.key}`);
+          const pattern = param.node;
+          param.replaceWith(id);
+          if (path.node.expression) {
+            const block = t.blockStatement([
+              t.variableDeclaration('var', [
+                t.variableDeclarator(pattern, id)
+              ]),
+              t.returnStatement(path.get('body').node)
+            ]);
+            path.node.body = block;
+            path.node.expression = false;
+          }
+          else {
+            path.get('body.body')[0].insertBefore(t.variableDeclaration('var', [
+              t.variableDeclarator(pattern, id)
+            ]));
+          }
+        }
+      }
+    },
+
     Function: {
       enter (path: NodePath, context: VisitorContext): void {
         if (maybeSkip(path)) {
