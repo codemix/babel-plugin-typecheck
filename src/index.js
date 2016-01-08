@@ -78,9 +78,17 @@ export default function ({types: t, template}): Object {
   const checkEquals: (() => Node) = expression(`input === expected`);
 
   const declareTypeChecker: (() => Node) = template(`
-    const id = function id (input) {
-      return check;
-    };
+    const id = (function () {
+      function id (input) {
+        return check;
+      };
+      Object.defineProperty(id, Symbol.hasInstance, {
+        value: function (input) {
+          return id(input);
+        }
+      });
+      return id;
+    })();
   `);
 
   const guard: (() => Node) = template(`
@@ -572,7 +580,7 @@ export default function ({types: t, template}): Object {
       const right: NodePath = path.get('right');
       const rightAnnotation: TypeAnnotation = getAnnotation(right);
       const leftAnnotation: TypeAnnotation = left.isVariableDeclaration() ? getAnnotation(left.get('declarations')[0].get('id')) : getAnnotation(left);
-      if (rightAnnotation.type !== 'VoidTypeAnnotation') {
+      if (rightAnnotation.type !== 'VoidTypeAnnotation' && rightAnnotation.type !== 'NullLiteralTypeAnnotation') {
         const ok: ?boolean = maybeIterableAnnotation(rightAnnotation);
         if (ok === false) {
           throw path.buildCodeFrameError(`Cannot iterate ${humanReadableType(rightAnnotation)}.`);
@@ -1048,6 +1056,7 @@ export default function ({types: t, template}): Object {
       case 'IntersectionTypeAnnotation':
         return intersectionComparer(a, b, compareObjectAnnotation);
       case 'VoidTypeAnnotation':
+      case 'NullLiteralTypeAnnotation':
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
       case 'StringTypeAnnotation':
@@ -1095,6 +1104,7 @@ export default function ({types: t, template}): Object {
       case 'IntersectionTypeAnnotation':
         return intersectionComparer(a, b, compareArrayAnnotation);
       case 'VoidTypeAnnotation':
+      case 'NullLiteralTypeAnnotation':
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
       case 'StringTypeAnnotation':
@@ -1150,6 +1160,7 @@ export default function ({types: t, template}): Object {
       case 'IntersectionTypeAnnotation':
         return intersectionComparer(a, b, compareTupleAnnotation);
       case 'VoidTypeAnnotation':
+      case 'NullLiteralTypeAnnotation':
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
       case 'StringTypeAnnotation':
@@ -1182,6 +1193,7 @@ export default function ({types: t, template}): Object {
         return compareNullableAnnotation(a, b.typeAnnotation);
       case 'NullableTypeAnnotation':
       case 'VoidTypeAnnotation':
+      case 'NullLiteralTypeAnnotation':
         return null;
     }
     if (compareAnnotations(a.typeAnnotation, b) === true) {
@@ -1625,6 +1637,7 @@ export default function ({types: t, template}): Object {
       case 'NullableTypeAnnotation':
         return checks.nullable({input, type: annotation.typeAnnotation, scope});
       case 'VoidTypeAnnotation':
+      case 'NullLiteralTypeAnnotation':
         return checks.void({input});
     }
   }
@@ -2098,7 +2111,7 @@ export default function ({types: t, template}): Object {
           const id = target.get('property').node;
           for (let {key, value} of annotation.properties || []) {
             if (key.name === id.name) {
-              return value.type === 'VoidTypeAnnotation' ? t.anyTypeAnnotation() : value;
+              return (value.type === 'VoidTypeAnnotation' || value.type === 'NullLiteralTypeAnnotation') ? t.anyTypeAnnotation() : value;
             }
           }
       }
@@ -2446,6 +2459,7 @@ export default function ({types: t, template}): Object {
     switch (annotation.type) {
       case 'NullableTypeAnnotation':
       case 'VoidTypeAnnotation':
+      case 'NullLiteralTypeAnnotation':
       case 'MixedTypeAnnotation':
         return true;
       case 'TypeAnnotation':
@@ -2545,14 +2559,32 @@ export default function ({types: t, template}): Object {
           return null;
         }
       case 'VoidTypeAnnotation':
+      case 'NullLiteralTypeAnnotation':
+        if (expected.name === 'Array' || expected.name === 'RegExp' || expected.name === 'Error' || expected.name === 'Function' || expected.name === 'String' || expected.name === 'Object') {
+          return false;
+        }
+        else {
+          return null;
+        }
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
       case 'StringTypeAnnotation':
       case 'StringLiteralTypeAnnotation':
       case 'NumberTypeAnnotation':
       case 'NumericLiteralTypeAnnotation':
+        if (expected.name === 'Array' || expected.name === 'RegExp' || expected.name === 'Error' || expected.name === 'Function') {
+          return false;
+        }
+        else {
+          return null;
+        }
       case 'FunctionTypeAnnotation':
-        return false;
+        if (expected.name === 'Function') {
+          return true;
+        }
+        else {
+          return null;
+        }
       default:
         return null;
     }
@@ -2636,6 +2668,7 @@ export default function ({types: t, template}): Object {
       case 'NumericLiteralTypeAnnotation':
       case 'NumberTypeAnnotation':
       case 'VoidTypeAnnotation':
+      case 'NullLiteralTypeAnnotation':
         return false;
       default:
         return null;
