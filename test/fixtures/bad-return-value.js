@@ -1,3 +1,3 @@
 export default function demo (): Object {
-  return false;
+  return null;
 }

@@ -78,9 +78,17 @@ export default function ({types: t, template}): Object {
   const checkEquals: (() => Node) = expression(`input === expected`);
 
   const declareTypeChecker: (() => Node) = template(`
-    const id = function id (input) {
-      return check;
-    };
+    const id = (function () {
+      function id (input) {
+        return check;
+      };
+      Object.defineProperty(id, Symbol.hasInstance, {
+        value: function (input) {
+          return id(input);
+        }
+      });
+      return id;
+    })();
   `);
 
   const guard: (() => Node) = template(`
@@ -2545,14 +2553,31 @@ export default function ({types: t, template}): Object {
           return null;
         }
       case 'VoidTypeAnnotation':
+        if (expected.name === 'Array' || expected.name === 'RegExp' || expected.name === 'Error' || expected.name === 'Function' || expected.name === 'String' || expected.name === 'Object') {
+          return false;
+        }
+        else {
+          return null;
+        }
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
       case 'StringTypeAnnotation':
       case 'StringLiteralTypeAnnotation':
       case 'NumberTypeAnnotation':
       case 'NumericLiteralTypeAnnotation':
+        if (expected.name === 'Array' || expected.name === 'RegExp' || expected.name === 'Error' || expected.name === 'Function') {
+          return false;
+        }
+        else {
+          return null;
+        }
       case 'FunctionTypeAnnotation':
-        return false;
+        if (expected.name === 'Function') {
+          return true;
+        }
+        else {
+          return null;
+        }
       default:
         return null;
     }
