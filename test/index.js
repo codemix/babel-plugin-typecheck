@@ -12,6 +12,13 @@ else {
 }
 
 describe('Typecheck', function () {
+  okWithOptions('pragma-opt-in', { only: ['test'] },  1);
+  failWithOptions('pragma-opt-in', { only: ['production'] },  1);
+  okWithOptions('pragma-opt-in', { only: ['production'] }, 'a');
+  failWithOptions('pragma-opt-in', { only: ['test', 'production'] },  1);
+  okWithOptions('pragma-opt-in', { only: ['test', 'production'] }, 'a');
+  ok('pragma-opt-in', 'a');
+
   ok('bug-98-false-positive-destructuring', {date: 'string', time: 'string'});
   ok('bug-98-false-positive-destructuring-expression', {date: 'string', time: 'string'});
   ok('bug-96-iterate-array');
@@ -1165,11 +1172,11 @@ describe('Typecheck', function () {
   });
 });
 
-function load (basename) {
-  return loadInternal(basename).exports.default;
+function load (basename, opts) {
+  return loadInternal(basename, opts).exports.default;
 }
 
-function loadInternal (basename) {
+function loadInternal (basename, opts) {
   const filename = `${__dirname}/fixtures/${basename}.js`;
   const source = fs.readFileSync(filename, 'utf8');
   const transformed = transform(source, {
@@ -1179,7 +1186,7 @@ function loadInternal (basename) {
       "stage-0",
     ],
     plugins: [
-      typecheck,
+      opts ? [typecheck, opts] : typecheck,
       'transform-flow-strip-types',
       'syntax-class-properties'
     ]
@@ -1207,6 +1214,32 @@ function isThenable (thing: mixed): boolean {
   return thing && typeof thing.then === 'function';
 }
 
+function okWithOptions (basename, opts, ...args) {
+  it(`should load '${basename}' with options '${JSON.stringify(opts)}'`, async function () {
+    const result = load(basename, opts)(...args);
+    if (isThenable(result)) {
+      await result;
+    }
+  });
+}
+
+function failWithOptions (basename, opts, ...args) {
+  it(`should not load '${basename}' with options '${JSON.stringify(opts)}'`, async function () {
+    let failed = false;
+    try {
+      const result = load(basename, opts)(...args);
+      if (isThenable(result)) {
+        await result;
+      }
+    }
+    catch (e) {
+      failed = true;
+    }
+    if (!failed) {
+      throw new Error(`Test '${basename}' should have failed but did not.`);
+    }
+  });
+}
 
 function ok (basename, ...args) {
   it(`should load '${basename}'`, async function () {
