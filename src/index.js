@@ -164,6 +164,25 @@ export default function ({types: t, template}): Object {
 
   const PRAGMA_IGNORE_STATEMENT = /typecheck:\s*ignore\s+statement/i;
   const PRAGMA_IGNORE_FILE = /typecheck:\s*ignore\s+file/i;
+  function skipEnvironment(comments, opts) {
+    if (!opts.only) {
+      return false;
+    }
+    const envs = pragmaEnvironments(comments);
+    return !opts.only.some(env => envs[env]);
+  }
+
+  function pragmaEnvironments(comments) {
+    const pragma = /@typecheck:\s*(.+)/;
+    const environments = {};
+    comments.forEach(comment => {
+      const m = comment.value.match(pragma);
+      if (m) {
+        m[1].split(',').forEach(env => environments[env.trim()] = true);
+      }
+    })
+    return environments;
+  }
 
   const visitors = {
     Statement (path: NodePath): void {
@@ -631,7 +650,7 @@ export default function ({types: t, template}): Object {
           return;
         }
         for (let child of path.get('body')) {
-          if (maybeSkipFile(child)) {
+          if (maybeSkipFile(child, opts)) {
             return;
           }
         }
@@ -3103,8 +3122,11 @@ export default function ({types: t, template}): Object {
   /**
    * Determine whether the file should be skipped, based on the comments attached to the given node.
    */
-  function maybeSkipFile (path: NodePath): boolean {
+  function maybeSkipFile (path: NodePath, opts): boolean {
     if (path.node.leadingComments && path.node.leadingComments.length) {
+      if (skipEnvironment(path.node.leadingComments, opts)) {
+        return true;
+      }
       return path.node.leadingComments.some(comment => PRAGMA_IGNORE_FILE.test(comment.value));
     }
     return false;
