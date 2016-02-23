@@ -669,7 +669,12 @@ export default function ({types: t, template}): Object {
         if (requiresHelpers.inspect) {
           const body = path.get('body');
           body[body.length - 1].insertAfter(template(`
-            function id (input) {
+            function id (input, depth) {
+              var maxDepth = 4
+              if (depth === undefined) {
+                depth = 0
+              }
+              depth += 1
               if (input === null) {
                 return 'null';
               }
@@ -681,8 +686,9 @@ export default function ({types: t, template}): Object {
               }
               else if (Array.isArray(input)) {
                 if (input.length > 0) {
-                  var first = id(input[0]);
-                  if (input.every(item => id(item) === first)) {
+                  if (depth > maxDepth) return '[...]';
+                  var first = id(input[0], depth);
+                  if (input.every(item => id(item, depth) === first)) {
                     return first.trim() + '[]';
                   }
                   else {
@@ -703,8 +709,9 @@ export default function ({types: t, template}): Object {
                     return 'Object';
                   }
                 }
+                if (depth > maxDepth) return '{...}';
                 var entries = keys.map(key => {
-                  return (/^([A-Z_$][A-Z0-9_$]*)$/i.test(key) ? key : JSON.stringify(key)) + ': ' + id(input[key]) + ';';
+                  return (/^([A-Z_$][A-Z0-9_$]*)$/i.test(key) ? key : JSON.stringify(key)) + ': ' + id(input[key], depth) + ';';
                 }).join('\\n  ');
                 if (input.constructor && input.constructor.name && input.constructor.name !== 'Object') {
                   return input.constructor.name + ' {\\n  ' + entries + '\\n}';
