@@ -711,15 +711,16 @@ export default function ({types: t, template}): Object {
                   }
                 }
                 if (depth > maxDepth) return '{...}';
+                var indent = '  '.repeat(depth - 1)
                 var entries = keys.slice(0, maxKeys).map(key => {
                   return (/^([A-Z_$][A-Z0-9_$]*)$/i.test(key) ? key : JSON.stringify(key)) + ': ' + id(input[key], depth) + ';';
-                }).join('\\n  ');
-                if (keys.length >= maxKeys) entries += '\\n  ...'
+                }).join('\\n  ' + indent);
+                if (keys.length >= maxKeys) entries += '\\n  ' + indent + '...'
                 if (input.constructor && input.constructor.name && input.constructor.name !== 'Object') {
-                  return input.constructor.name + ' {\\n  ' + entries + '\\n}';
+                  return input.constructor.name + ' {\\n  ' + indent + entries + '\\n' + indent + '}';
                 }
                 else {
-                  return '{ ' + entries + '\\n}';
+                  return '{\\n  ' + indent + entries + '\\n' + indent + '}';
                 }
               }
             }
