@@ -671,6 +671,7 @@ export default function ({types: t, template}): Object {
           body[body.length - 1].insertAfter(template(`
             function id (input, depth) {
               var maxDepth = 4
+              var maxKeys = 15
               if (depth === undefined) {
                 depth = 0
               }
@@ -692,7 +693,7 @@ export default function ({types: t, template}): Object {
                     return first.trim() + '[]';
                   }
                   else {
-                    return '[' + input.map(id).join(', ') + ']';
+                    return '[' + input.slice(0, maxKeys).map(item => id(item, depth)).join(', ') + (input.length >= maxKeys ? ', ...' : '') + ']';
                   }
                 }
                 else {
@@ -710,9 +711,10 @@ export default function ({types: t, template}): Object {
                   }
                 }
                 if (depth > maxDepth) return '{...}';
-                var entries = keys.map(key => {
+                var entries = keys.slice(0, maxKeys).map(key => {
                   return (/^([A-Z_$][A-Z0-9_$]*)$/i.test(key) ? key : JSON.stringify(key)) + ': ' + id(input[key], depth) + ';';
                 }).join('\\n  ');
+                if (keys.length >= maxKeys) entries += '\\n  ...'
                 if (input.constructor && input.constructor.name && input.constructor.name !== 'Object') {
                   return input.constructor.name + ' {\\n  ' + entries + '\\n}';
                 }
