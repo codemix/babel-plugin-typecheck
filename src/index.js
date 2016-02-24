@@ -50,7 +50,6 @@ type NodePath = {
  * # Typecheck Transformer
  */
 export default function ({types: t, template}): Object {
-
   /**
    * Binary Operators that can only produce boolean results.
    */
@@ -2889,28 +2888,28 @@ export default function ({types: t, template}): Object {
 
   function createParamGuard (path: NodePath, context: VisitorContext): ?Node {
     const {node, scope} = path;
-
     node.hasBeenTypeChecked = true;
     node.savedTypeAnnotation = node.typeAnnotation;
-    let check;
+    let checkable;
     if (node.type === 'ObjectPattern') {
       node.name = path.key;
-      check = checkAnnotation(t.memberExpression(t.identifier('arguments'), t.numericLiteral(path.key), true), node.typeAnnotation, scope);
+      checkable = t.memberExpression(t.identifier('arguments'), t.numericLiteral(path.key), true);
     }
     else {
-      check = checkAnnotation(node, node.typeAnnotation, scope);
+      checkable = node;
     }
+    let check = checkAnnotation(checkable, node.typeAnnotation, scope);
     if (!check) {
       return;
     }
     if (node.optional) {
       check = t.logicalExpression(
         '||',
-        checks.undefined({input: node}),
+        checks.undefined({input: checkable}),
         check
       );
     }
-    const message = paramTypeErrorMessage(node, context);
+    const message = paramTypeErrorMessage(checkable, context, node.typeAnnotation);
     return guard({
       check,
       message
@@ -3006,7 +3005,10 @@ export default function ({types: t, template}): Object {
   }
 
   function paramTypeErrorMessage (node: Node, context: VisitorContext, typeAnnotation: TypeAnnotation = node.typeAnnotation): Node {
-    const name = node.name;
+    let name = node.name;
+    if (node.type === 'MemberExpression' && node.object.name === 'arguments') {
+      name = node.property.value;
+    }
     const message = `Value of ${node.optional ? 'optional ' : ''}argument ${JSON.stringify(name)} violates contract.\n\nExpected:\n${humanReadableType(typeAnnotation)}\n\nGot:\n`;
 
     return t.binaryExpression(

@@ -12,6 +12,19 @@ else {
 }
 
 describe('Typecheck', function () {
+  ok('bug-108-default-value', {y: ''});
+  failWith(`
+    Value of argument 0 violates contract.
+
+    Expected:
+    { y: string
+    }
+
+    Got:
+    {
+      y: boolean;
+    }
+  `, 'bug-108-default-value', {y: false});
   failWith(`
     Value of variable "k" violates contract.
 
@@ -416,7 +429,6 @@ describe('Typecheck', function () {
 
     Got:
     { a: string;
-      b: void;
     }
   `, 'object-pattern', {a: 'foo'});
   ok('object-pattern-complex', {a: 'foo', b: 34, d: {e: 'bar', g: 123, a: 123}});
@@ -436,6 +448,7 @@ describe('Typecheck', function () {
       b: number;
       d: { e: string;
         g: boolean;
+        a: number;
       };
     }
   `, 'object-pattern-complex', {a: 'foo', b: 34, d: {e: 'bar', g: false, a: 123}});
