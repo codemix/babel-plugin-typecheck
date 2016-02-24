@@ -53,11 +53,13 @@ npm install --save-dev babel-plugin-typecheck
 Then, in your babel configuration (usually in your `.babelrc` file), add `"typecheck"` to your list of plugins:
 ```json
 {
-  "plugins": [["typecheck", {
-    "disable": {
-      "production": true
-    }  
-  }]]
+  "plugins": [
+    ["typecheck", {
+      "disable": {
+        "production": true
+      }
+    }]
+  ]
 }
 ```
 
@@ -74,6 +76,8 @@ If you are not already using the `babel-preset-react` plugin, you **must** insta
 }
 ```
 If you *are* using `babel-preset-react` you can ignore this warning.
+
+> **Note** Depending on your babel configuration you may encounter issues where typecheck interferes with other transformations. This can almost always be fixed by adjusting your preset order and setting `"passPerPreset": true` in your `.babelrc`.
 
 # Examples
 
