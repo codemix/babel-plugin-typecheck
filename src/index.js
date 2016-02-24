@@ -654,7 +654,7 @@ export default function ({types: t, template}): Object {
               }
               else if (Array.isArray(input)) {
                 if (input.length > 0) {
-                  var first = id(input[0]);
+                  const first = id(input[0]);
                   if (input.every(item => id(item) === first)) {
                     return first.trim() + '[]';
                   }
@@ -667,7 +667,7 @@ export default function ({types: t, template}): Object {
                 }
               }
               else {
-                var keys = Object.keys(input);
+                const keys = Object.keys(input);
                 if (!keys.length) {
                   if (input.constructor && input.constructor.name && input.constructor.name !== 'Object') {
                     return input.constructor.name;
@@ -676,7 +676,7 @@ export default function ({types: t, template}): Object {
                     return 'Object';
                   }
                 }
-                var entries = keys.map(key => {
+                const entries = keys.map(key => {
                   return (/^([A-Z_$][A-Z0-9_$]*)$/i.test(key) ? key : JSON.stringify(key)) + ': ' + id(input[key]) + ';';
                 }).join('\\n  ');
                 if (input.constructor && input.constructor.name && input.constructor.name !== 'Object') {

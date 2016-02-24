@@ -12,6 +12,17 @@ else {
 }
 
 describe('Typecheck', function () {
+  failWith(`
+    Value of variable "k" violates contract.
+
+    Expected:
+    { captureTime: number
+    }
+
+    Got:
+    { x: number;
+    }
+  `, 'bug-107-type-alias', 123);
   ok('bug-98-false-positive-destructuring', {date: 'string', time: 'string'});
   ok('bug-98-false-positive-destructuring-expression', {date: 'string', time: 'string'});
   ok('bug-96-iterate-array');
