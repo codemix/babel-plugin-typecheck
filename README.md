@@ -269,6 +269,29 @@ foo = 123;
 > Note: Because of how typecheck works, it's not possible to ignore individual lines, only entire statements or files.
 > So if you ignore e.g. an if statement, the entire body of that statement will be ignored.
 
+You can also control the disabling and enabling of type checking using the [plugin options](http://babeljs.io/docs/plugins/) and the `@typecheck` pragma. Type checking will be enabled only for files where any of the configured `only` values are found in the `@typecheck` pragma. With babel configuration:
+
+```
+"plugins": [
+  ["typecheck", { only: ["production", "test"] }],
+  ...
+  ]
+```
+
+This file would have typechecks enabled
+
+```
+// @typecheck: production, some
+```
+
+Whereas this file would not:
+
+```
+// @typecheck: any, some
+```
+
+
+
 # License
 
 Published by [codemix](http://codemix.com/) under a permissive MIT License, see [LICENSE.md](./LICENSE.md).

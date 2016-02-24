@@ -78,9 +78,17 @@ export default function ({types: t, template}): Object {
   const checkEquals: (() => Node) = expression(`input === expected`);
 
   const declareTypeChecker: (() => Node) = template(`
-    const id = function id (input) {
-      return check;
-    };
+    const id = (function () {
+      function id (input) {
+        return check;
+      };
+      Object.defineProperty(id, Symbol.hasInstance, {
+        value: function (input) {
+          return id(input);
+        }
+      });
+      return id;
+    })();
   `);
 
   const guard: (() => Node) = template(`
@@ -156,6 +164,25 @@ export default function ({types: t, template}): Object {
 
   const PRAGMA_IGNORE_STATEMENT = /typecheck:\s*ignore\s+statement/i;
   const PRAGMA_IGNORE_FILE = /typecheck:\s*ignore\s+file/i;
+  function skipEnvironment(comments, opts) {
+    if (!opts.only) {
+      return false;
+    }
+    const envs = pragmaEnvironments(comments);
+    return !opts.only.some(env => envs[env]);
+  }
+
+  function pragmaEnvironments(comments) {
+    const pragma = /@typecheck:\s*(.+)/;
+    const environments = {};
+    comments.forEach(comment => {
+      const m = comment.value.match(pragma);
+      if (m) {
+        m[1].split(',').forEach(env => environments[env.trim()] = true);
+      }
+    })
+    return environments;
+  }
 
   const visitors = {
     Statement (path: NodePath): void {
@@ -390,6 +417,9 @@ export default function ({types: t, template}): Object {
       if (isGeneratorAnnotation(annotation)) {
         annotation = annotation.typeParameters && annotation.typeParameters.params.length > 1 ? annotation.typeParameters.params[1] : t.anyTypeAnnotation();
       }
+      else if (node.async && annotation.type === 'GenericTypeAnnotation' && annotation.id.name === 'Promise') {
+        annotation = (annotation.typeParameters && annotation.typeParameters[0]) || t.anyTypeAnnotation();
+      }
       const ok = staticCheckAnnotation(path.get("argument"), annotation);
       if (ok === true) {
         return;
@@ -572,7 +602,7 @@ export default function ({types: t, template}): Object {
       const right: NodePath = path.get('right');
       const rightAnnotation: TypeAnnotation = getAnnotation(right);
       const leftAnnotation: TypeAnnotation = left.isVariableDeclaration() ? getAnnotation(left.get('declarations')[0].get('id')) : getAnnotation(left);
-      if (rightAnnotation.type !== 'VoidTypeAnnotation') {
+      if (rightAnnotation.type !== 'VoidTypeAnnotation' && rightAnnotation.type !== 'NullLiteralTypeAnnotation') {
         const ok: ?boolean = maybeIterableAnnotation(rightAnnotation);
         if (ok === false) {
           throw path.buildCodeFrameError(`Cannot iterate ${humanReadableType(rightAnnotation)}.`);
@@ -623,7 +653,7 @@ export default function ({types: t, template}): Object {
           return;
         }
         for (let child of path.get('body')) {
-          if (maybeSkipFile(child)) {
+          if (maybeSkipFile(child, opts)) {
             return;
           }
         }
@@ -642,7 +672,13 @@ export default function ({types: t, template}): Object {
         if (requiresHelpers.inspect) {
           const body = path.get('body');
           body[body.length - 1].insertAfter(template(`
-            function id (input) {
+            function id (input, depth) {
+              const maxDepth = 4;
+              const maxKeys = 15;
+              if (depth === undefined) {
+                depth = 0;
+              }
+              depth += 1;
               if (input === null) {
                 return 'null';
               }
@@ -654,12 +690,13 @@ export default function ({types: t, template}): Object {
               }
               else if (Array.isArray(input)) {
                 if (input.length > 0) {
-                  const first = id(input[0]);
-                  if (input.every(item => id(item) === first)) {
+                  if (depth > maxDepth) return '[...]';
+                  const first = id(input[0], depth);
+                  if (input.every(item => id(item, depth) === first)) {
                     return first.trim() + '[]';
                   }
                   else {
-                    return '[' + input.map(id).join(', ') + ']';
+                    return '[' + input.slice(0, maxKeys).map(item => id(item, depth)).join(', ') + (input.length >= maxKeys ? ', ...' : '') + ']';
                   }
                 }
                 else {
@@ -676,14 +713,19 @@ export default function ({types: t, template}): Object {
                     return 'Object';
                   }
                 }
-                const entries = keys.map(key => {
-                  return (/^([A-Z_$][A-Z0-9_$]*)$/i.test(key) ? key : JSON.stringify(key)) + ': ' + id(input[key]) + ';';
-                }).join('\\n  ');
+                if (depth > maxDepth) return '{...}';
+                const indent = '  '.repeat(depth - 1);
+                let entries = keys.slice(0, maxKeys).map(key => {
+                  return (/^([A-Z_$][A-Z0-9_$]*)$/i.test(key) ? key : JSON.stringify(key)) + ': ' + id(input[key], depth) + ';';
+                }).join('\\n  ' + indent);
+                if (keys.length >= maxKeys) {
+                  entries += '\\n  ' + indent + '...';
+                }
                 if (input.constructor && input.constructor.name && input.constructor.name !== 'Object') {
-                  return input.constructor.name + ' {\\n  ' + entries + '\\n}';
+                  return input.constructor.name + ' {\\n  ' + indent + entries + '\\n' + indent + '}';
                 }
                 else {
-                  return '{ ' + entries + '\\n}';
+                  return '{\\n  ' + indent + entries + '\\n' + indent + '}';
                 }
               }
             }
@@ -704,6 +746,9 @@ export default function ({types: t, template}): Object {
     }
     if (isGeneratorAnnotation(annotation)) {
       annotation = annotation.typeParameters && annotation.typeParameters.params.length > 1 ? annotation.typeParameters.params[1] : t.anyTypeAnnotation();
+    }
+    else if (node.async && annotation.type === 'GenericTypeAnnotation' && annotation.id.name === 'Promise') {
+      annotation = (annotation.typeParameters && annotation.typeParameters[0]) || t.anyTypeAnnotation();
     }
     const name = scope.generateUidIdentifierBasedOnNode(node);
     const id = scope.generateUidIdentifier('id');
@@ -1048,6 +1093,7 @@ export default function ({types: t, template}): Object {
       case 'IntersectionTypeAnnotation':
         return intersectionComparer(a, b, compareObjectAnnotation);
       case 'VoidTypeAnnotation':
+      case 'NullLiteralTypeAnnotation':
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
       case 'StringTypeAnnotation':
@@ -1095,6 +1141,7 @@ export default function ({types: t, template}): Object {
       case 'IntersectionTypeAnnotation':
         return intersectionComparer(a, b, compareArrayAnnotation);
       case 'VoidTypeAnnotation':
+      case 'NullLiteralTypeAnnotation':
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
       case 'StringTypeAnnotation':
@@ -1150,6 +1197,7 @@ export default function ({types: t, template}): Object {
       case 'IntersectionTypeAnnotation':
         return intersectionComparer(a, b, compareTupleAnnotation);
       case 'VoidTypeAnnotation':
+      case 'NullLiteralTypeAnnotation':
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
       case 'StringTypeAnnotation':
@@ -1182,6 +1230,7 @@ export default function ({types: t, template}): Object {
         return compareNullableAnnotation(a, b.typeAnnotation);
       case 'NullableTypeAnnotation':
       case 'VoidTypeAnnotation':
+      case 'NullLiteralTypeAnnotation':
         return null;
     }
     if (compareAnnotations(a.typeAnnotation, b) === true) {
@@ -1625,6 +1674,7 @@ export default function ({types: t, template}): Object {
       case 'NullableTypeAnnotation':
         return checks.nullable({input, type: annotation.typeAnnotation, scope});
       case 'VoidTypeAnnotation':
+      case 'NullLiteralTypeAnnotation':
         return checks.void({input});
     }
   }
@@ -2098,7 +2148,7 @@ export default function ({types: t, template}): Object {
           const id = target.get('property').node;
           for (let {key, value} of annotation.properties || []) {
             if (key.name === id.name) {
-              return value.type === 'VoidTypeAnnotation' ? t.anyTypeAnnotation() : value;
+              return (value.type === 'VoidTypeAnnotation' || value.type === 'NullLiteralTypeAnnotation') ? t.anyTypeAnnotation() : value;
             }
           }
       }
@@ -2446,6 +2496,7 @@ export default function ({types: t, template}): Object {
     switch (annotation.type) {
       case 'NullableTypeAnnotation':
       case 'VoidTypeAnnotation':
+      case 'NullLiteralTypeAnnotation':
       case 'MixedTypeAnnotation':
         return true;
       case 'TypeAnnotation':
@@ -2545,14 +2596,32 @@ export default function ({types: t, template}): Object {
           return null;
         }
       case 'VoidTypeAnnotation':
+      case 'NullLiteralTypeAnnotation':
+        if (expected.name === 'Array' || expected.name === 'RegExp' || expected.name === 'Error' || expected.name === 'Function' || expected.name === 'String' || expected.name === 'Object') {
+          return false;
+        }
+        else {
+          return null;
+        }
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
       case 'StringTypeAnnotation':
       case 'StringLiteralTypeAnnotation':
       case 'NumberTypeAnnotation':
       case 'NumericLiteralTypeAnnotation':
+        if (expected.name === 'Array' || expected.name === 'RegExp' || expected.name === 'Error' || expected.name === 'Function') {
+          return false;
+        }
+        else {
+          return null;
+        }
       case 'FunctionTypeAnnotation':
-        return false;
+        if (expected.name === 'Function') {
+          return true;
+        }
+        else {
+          return null;
+        }
       default:
         return null;
     }
@@ -2636,6 +2705,7 @@ export default function ({types: t, template}): Object {
       case 'NumericLiteralTypeAnnotation':
       case 'NumberTypeAnnotation':
       case 'VoidTypeAnnotation':
+      case 'NullLiteralTypeAnnotation':
         return false;
       default:
         return null;
@@ -3070,8 +3140,11 @@ export default function ({types: t, template}): Object {
   /**
    * Determine whether the file should be skipped, based on the comments attached to the given node.
    */
-  function maybeSkipFile (path: NodePath): boolean {
+  function maybeSkipFile (path: NodePath, opts): boolean {
     if (path.node.leadingComments && path.node.leadingComments.length) {
+      if (skipEnvironment(path.node.leadingComments, opts)) {
+        return true;
+      }
       return path.node.leadingComments.some(comment => PRAGMA_IGNORE_FILE.test(comment.value));
     }
     return false;
