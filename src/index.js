@@ -669,7 +669,13 @@ export default function ({types: t, template}): Object {
         if (requiresHelpers.inspect) {
           const body = path.get('body');
           body[body.length - 1].insertAfter(template(`
-            function id (input) {
+            function id (input, depth) {
+              var maxDepth = 4
+              var maxKeys = 15
+              if (depth === undefined) {
+                depth = 0
+              }
+              depth += 1
               if (input === null) {
                 return 'null';
               }
@@ -681,12 +687,13 @@ export default function ({types: t, template}): Object {
               }
               else if (Array.isArray(input)) {
                 if (input.length > 0) {
-                  var first = id(input[0]);
-                  if (input.every(item => id(item) === first)) {
+                  if (depth > maxDepth) return '[...]';
+                  var first = id(input[0], depth);
+                  if (input.every(item => id(item, depth) === first)) {
                     return first.trim() + '[]';
                   }
                   else {
-                    return '[' + input.map(id).join(', ') + ']';
+                    return '[' + input.slice(0, maxKeys).map(item => id(item, depth)).join(', ') + (input.length >= maxKeys ? ', ...' : '') + ']';
                   }
                 }
                 else {
@@ -703,14 +710,17 @@ export default function ({types: t, template}): Object {
                     return 'Object';
                   }
                 }
-                var entries = keys.map(key => {
-                  return (/^([A-Z_$][A-Z0-9_$]*)$/i.test(key) ? key : JSON.stringify(key)) + ': ' + id(input[key]) + ';';
-                }).join('\\n  ');
+                if (depth > maxDepth) return '{...}';
+                var indent = '  '.repeat(depth - 1)
+                var entries = keys.slice(0, maxKeys).map(key => {
+                  return (/^([A-Z_$][A-Z0-9_$]*)$/i.test(key) ? key : JSON.stringify(key)) + ': ' + id(input[key], depth) + ';';
+                }).join('\\n  ' + indent);
+                if (keys.length >= maxKeys) entries += '\\n  ' + indent + '...'
                 if (input.constructor && input.constructor.name && input.constructor.name !== 'Object') {
-                  return input.constructor.name + ' {\\n  ' + entries + '\\n}';
+                  return input.constructor.name + ' {\\n  ' + indent + entries + '\\n' + indent + '}';
                 }
                 else {
-                  return '{ ' + entries + '\\n}';
+                  return '{\\n  ' + indent + entries + '\\n' + indent + '}';
                 }
               }
             }
