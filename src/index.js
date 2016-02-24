@@ -417,6 +417,9 @@ export default function ({types: t, template}): Object {
       if (isGeneratorAnnotation(annotation)) {
         annotation = annotation.typeParameters && annotation.typeParameters.params.length > 1 ? annotation.typeParameters.params[1] : t.anyTypeAnnotation();
       }
+      else if (node.async && annotation.type === 'GenericTypeAnnotation' && annotation.id.name === 'Promise') {
+        annotation = (annotation.typeParameters && annotation.typeParameters[0]) || t.anyTypeAnnotation();
+      }
       const ok = staticCheckAnnotation(path.get("argument"), annotation);
       if (ok === true) {
         return;
@@ -741,6 +744,9 @@ export default function ({types: t, template}): Object {
     }
     if (isGeneratorAnnotation(annotation)) {
       annotation = annotation.typeParameters && annotation.typeParameters.params.length > 1 ? annotation.typeParameters.params[1] : t.anyTypeAnnotation();
+    }
+    else if (node.async && annotation.type === 'GenericTypeAnnotation' && annotation.id.name === 'Promise') {
+      annotation = (annotation.typeParameters && annotation.typeParameters[0]) || t.anyTypeAnnotation();
     }
     const name = scope.generateUidIdentifierBasedOnNode(node);
     const id = scope.generateUidIdentifier('id');
