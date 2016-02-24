@@ -673,6 +673,7 @@ describe('Typecheck', function () {
 
     Got:
     number[]`, 'async-function', [123]);
+  ok('async-function-return-promise', ['a', 'b', 'c']);
   failStatic('bad-async-function', 'hello world');
   ok('class-getter', 'alice');
   ok("bug-xxx-export");
