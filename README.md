@@ -104,6 +104,35 @@ function foo(
 }
 ```
 
+# Importing and Exporting types.
+
+You can reuse types across modules using an extension of the ES6 module syntax:
+
+***places.js***:
+```js
+export type CsvDataType = Array<Array<String>>;
+export type LocationType = {
+    country: string,
+    sourceNid: string,
+    locationNid: string,
+    name: string,
+    url: string,
+    alternativeUrl: ?string,
+    street1: ?string
+};
+```
+***widget.js***:
+```js
+import type {
+    CsvDataType,
+    LocationType
+} from './places';
+
+// You can now use CsvDataType and LocationType just like any other type.
+```
+
+Note that in contrast to flow, an imported type **must** be an actual type and cannot be a class or other concrete value. 
+
 # Optimization
 
 In cases where typecheck can statically verify that the return value is of the correct type, no type checks will be inserted, for instance:
