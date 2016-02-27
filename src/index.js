@@ -161,6 +161,18 @@ export default function ({types: t, template}): Object {
     });
   `);
 
+  const propType: (() => Node) = expression(`
+    (function(props, name, component) {
+      var prop = props[name];
+      if(!check) {
+        return new Error(
+          "Invalid prop \`" + name + "\` supplied to \`" + component 
+          + "\`.\\n\\nExpected:\\n" + expected + "\\n\\nGot:\\n" + got + "\\n\\n"
+        );
+      }
+    })
+  `);
+
   const PRAGMA_IGNORE_STATEMENT = /typecheck:\s*ignore\s+statement/i;
   const PRAGMA_IGNORE_FILE = /typecheck:\s*ignore\s+file/i;
   function skipEnvironment(comments, opts) {
@@ -641,9 +653,58 @@ export default function ({types: t, template}): Object {
           )
         );
       }
+    },
+
+    ClassDeclaration (path: NodePath, context: VisitorContext) {
+      // Convert React props to propTypes
+      if (!path.node.superClass) {
+        return;
+      }
+
+      let props: ?Node;
+      let hasRenderMethod = false;
+      for (let classMember of path.node.body.body) {
+        if (t.isClassProperty(classMember)) {
+          if (classMember.key.name === 'propTypes' && classMember.static) {
+            return;
+          } else if (classMember.key.name === 'props' && !classMember.static) {
+            props = classMember;
+          }
+        }
+        if (t.isClassMethod(classMember) && classMember.key.name === 'render') {
+          hasRenderMethod = true;
+        }
+      }
+
+      if (!props || !hasRenderMethod) {
+        return;
+      }
+
+      const type: Node = props.typeAnnotation.typeAnnotation;
+      if (!t.isObjectTypeAnnotation(type)) {
+        return;
+      }
+
+      // Now we have a class that has a superclass, an instance method called 'render'
+      // and a property called 'props'. We can be reasonably sure it's a React component.
+
+      const root: NodePath = path.parentPath.isExportDeclaration() ? path.parentPath : path;
+      root.insertAfter(
+        t.expressionStatement(
+          t.assignmentExpression(
+            "=",
+            t.memberExpression(path.node.id, t.identifier("propTypes")),
+            t.objectExpression(type.properties.map(
+              prop => t.objectProperty(
+                t.identifier(prop.key.name),
+                generatePropType(prop.value, path.scope, context)
+              )
+            ))
+          )
+        )
+      );
     }
   };
-
 
   return {
     visitor: {
@@ -3039,6 +3100,24 @@ export default function ({types: t, template}): Object {
     }
   }
 
+  /**
+   * Create a React property validator
+   */
+  function generatePropType (annotation: TypeAnnotation, scope: Scope, context: VisitorContext) {
+    const prop = t.identifier('prop');
+    const check = checkAnnotation(prop, annotation, scope);
+    if (check) {
+      return propType({
+        check,
+        prop,
+        expected: t.stringLiteral(humanReadableType(annotation)),
+        got: readableName({inspect: context.inspect, input: prop})
+      });
+    } else {
+      return t.functionExpression(null, [], t.blockStatement([]));
+    }
+  }
+  
   /**
    * Determine whether the given node can produce purely boolean results.
    */

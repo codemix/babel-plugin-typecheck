@@ -12,6 +12,17 @@ else {
 }
 
 describe('Typecheck', function () {
+
+  ok('react-proptypes', {bar: 'bar'});
+  failWith(`
+    Invalid prop \`bar\` supplied to \`Foo\`.
+
+    Expected:
+    string
+
+    Got:
+    number
+  `, 'react-proptypes', {bar: 3});
   ok('bug-108-default-value', {y: ''});
   failWith(`
     Value of argument 0 violates contract.
