@@ -5,7 +5,7 @@
   "main": "lib/index.js",
   "scripts": {
     "build": "babel --plugins syntax-flow,transform-flow-strip-types -d ./lib ./src",
-    "build-typed": "npm run build && babel --plugins ./lib,syntax-flow,transform-flow-strip-types -d ./lib-checked ./src",
+    "build-typed": "npm run build && babel --plugins ../lib,syntax-flow,transform-flow-strip-types -d ./lib-checked ./src",
     "prepublish": "npm run test-checked",
     "pretest": "npm run build",
     "test": "mocha ./test/index.js",
