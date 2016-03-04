@@ -13,6 +13,17 @@ else {
 
 describe('Typecheck', function () {
 
+  ok('react-parameterized', {bar: 'bar'});
+  failWith(`
+    Invalid prop \`bar\` supplied to \`Foo\`.
+
+    Expected:
+    string
+
+    Got:
+    number
+  `, 'react-parameterized', {bar: 3});
+
   ok('react-proptypes', {bar: 'bar'});
   failWith(`
     Invalid prop \`bar\` supplied to \`Foo\`.

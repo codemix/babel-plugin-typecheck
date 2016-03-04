@@ -676,17 +676,31 @@ export default function ({types: t, template}): Object {
         }
       }
 
-      if (!props || !hasRenderMethod) {
+      let type: ?Node;
+      if (path.node.superTypeParameters) {
+        if (path.node.superTypeParameters.params.length !== 3) {
+          return;
+        }
+        type = path.node.superTypeParameters.params[1];
+      }
+      if (props) {
+        type = props.typeAnnotation.typeAnnotation;
+      }
+
+      if (!type || !hasRenderMethod) {
         return;
       }
 
-      const type: Node = props.typeAnnotation.typeAnnotation;
+      if (t.isGenericTypeAnnotation(type)) {
+        const binding = path.scope.getBinding(type.id.name);
+        type = getAnnotation(binding.path);
+      }
       if (!t.isObjectTypeAnnotation(type)) {
         return;
       }
 
       // Now we have a class that has a superclass, an instance method called 'render'
-      // and a property called 'props'. We can be reasonably sure it's a React component.
+      // and some property type annotations. We can be reasonably sure it's a React component.
 
       const root: NodePath = path.parentPath.isExportDeclaration() ? path.parentPath : path;
       root.insertAfter(
