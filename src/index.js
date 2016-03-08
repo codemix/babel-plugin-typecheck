@@ -661,14 +661,16 @@ export default function ({types: t, template}): Object {
         return;
       }
 
-      let props: ?Node;
+      let props: ?NodePath;
       let hasRenderMethod = false;
-      for (let classMember of path.node.body.body) {
+      for (let memberPath of path.get('body.body')) {
+        const classMember = memberPath.node;
         if (t.isClassProperty(classMember)) {
           if (classMember.key.name === 'propTypes' && classMember.static) {
             return;
-          } else if (classMember.key.name === 'props' && !classMember.static) {
-            props = classMember;
+          } 
+          else if (classMember.key.name === 'props' && !classMember.static) {
+            props = memberPath;
           }
         }
         if (t.isClassMethod(classMember) && classMember.key.name === 'render') {
@@ -684,7 +686,7 @@ export default function ({types: t, template}): Object {
         type = path.node.superTypeParameters.params[1];
       }
       if (props) {
-        type = props.typeAnnotation.typeAnnotation;
+        type = props.node.typeAnnotation.typeAnnotation;
       }
 
       if (!type || !hasRenderMethod) {
@@ -702,21 +704,32 @@ export default function ({types: t, template}): Object {
       // Now we have a class that has a superclass, an instance method called 'render'
       // and some property type annotations. We can be reasonably sure it's a React component.
 
-      const root: NodePath = path.parentPath.isExportDeclaration() ? path.parentPath : path;
-      root.insertAfter(
-        t.expressionStatement(
-          t.assignmentExpression(
-            "=",
-            t.memberExpression(path.node.id, t.identifier("propTypes")),
-            t.objectExpression(type.properties.map(
-              prop => t.objectProperty(
-                t.identifier(prop.key.name),
-                generatePropType(prop.value, path.scope, context)
-              )
-            ))
+      const propTypes = t.objectExpression(
+        type.properties.map(
+          prop => t.objectProperty(
+            t.identifier(prop.key.name),
+            generatePropType(prop.value, path.scope, context)
           )
         )
       );
+
+      if (path.node.decorators) {
+        const property = t.classProperty(t.identifier('propTypes'), propTypes);
+        property.static = true;
+        props.insertAfter(property);
+      } 
+      else {
+        const root:NodePath = path.parentPath.isExportDeclaration() ? path.parentPath : path;
+        root.insertAfter(
+          t.expressionStatement(
+            t.assignmentExpression(
+              "=",
+              t.memberExpression(path.node.id, t.identifier("propTypes")),
+              propTypes
+            )
+          )
+        );
+      }
     }
   };
 
