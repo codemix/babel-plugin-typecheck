@@ -977,13 +977,13 @@ export default function ({types: t, template}): Object {
         const type = createTypeExpression(annotation.id);
 
         const {node, scope} = path;
-        if (type.name === 'Object' && node.type === 'ObjectExpression' && !scope.hasBinding('Object')) {
+        if (type.name === 'Object' && node.type === 'ObjectExpression' && !scope.getBinding('Object')) {
           return true;
         }
-        else if (type.name === 'Map' && !scope.hasBinding('Map')) {
+        else if (type.name === 'Map' && !scope.getBinding('Map')) {
           return null;
         }
-        else if (type.name === 'Set' && !scope.hasBinding('Set')) {
+        else if (type.name === 'Set' && !scope.getBinding('Set')) {
           return null;
         }
         else if (type.name === 'Class' && !scope.hasBinding('Class')) {
@@ -1665,10 +1665,10 @@ export default function ({types: t, template}): Object {
         else if (annotation.id.name === 'Iterable' && !scope.hasBinding('Iterable')) {
           return checks.iterable({input, types: annotation.typeParameters ? annotation.typeParameters.params : [], scope});
         }
-        else if (annotation.id.name === 'Map' && !scope.hasBinding('Map')) {
+        else if (annotation.id.name === 'Map' && !scope.getBinding('Map')) {
           return checks.map({input, types: annotation.typeParameters ? annotation.typeParameters.params : [], scope});
         }
-        else if (annotation.id.name === 'Set' && !scope.hasBinding('Set')) {
+        else if (annotation.id.name === 'Set' && !scope.getBinding('Set')) {
           return checks.set({input, types: annotation.typeParameters ? annotation.typeParameters.params : [], scope});
         }
         else if (annotation.id.name === 'Function') {
@@ -1704,7 +1704,7 @@ export default function ({types: t, template}): Object {
         else if (annotation.id.name === 'double' && !scope.hasBinding('double')) {
           return checks.double({input});
         }
-        else if (annotation.id.name === 'Symbol' && !scope.hasBinding('Symbol')) {
+        else if (annotation.id.name === 'Symbol' && !scope.getBinding('Symbol')) {
           return checks.symbol({input});
         }
         else if (isTypeChecker(annotation.id, scope)) {
@@ -1871,8 +1871,6 @@ export default function ({types: t, template}): Object {
           return getArrayExpressionAnnotation(path);
         case 'ObjectExpression':
           return getObjectExpressionAnnotation(path);
-        case 'BinaryExpression':
-          return getBinaryExpressionAnnotation(path);
         case 'BinaryExpression':
           return getBinaryExpressionAnnotation(path);
         case 'LogicalExpression':
