@@ -13,6 +13,7 @@ else {
 
 describe('Typecheck', function () {
 
+  ok('react-decorator', {bar: 'bar'});
   ok('react-parameterized', {bar: 'bar'});
   failWith(`
     Invalid prop \`bar\` supplied to \`Foo\`.
@@ -1229,6 +1230,7 @@ function loadInternal (basename, opts) {
     plugins: [
       opts ? [typecheck, opts] : typecheck,
       'transform-flow-strip-types',
+      'transform-decorators-legacy',
       'syntax-class-properties'
     ]
   });
