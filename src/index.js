@@ -166,7 +166,7 @@ export default function ({types: t, template}): Object {
       var prop = props[name];
       if(!check) {
         return new Error(
-          "Invalid prop \`" + name + "\` supplied to \`" + component 
+          "Invalid prop \`" + name + "\` supplied to \`" + component
           + "\`.\\n\\nExpected:\\n" + expected + "\\n\\nGot:\\n" + got + "\\n\\n"
         );
       }
@@ -739,9 +739,18 @@ export default function ({types: t, template}): Object {
         if (opts && opts.disable && opts.disable[process.env.NODE_ENV]) {
           return;
         }
+        let checkFile = false;
         for (let child of path.get('body')) {
-          if (maybeSkipFile(child, opts)) {
-            return;
+          if (mustCheckFile(child, opts)) {
+            checkFile = true;
+            break;
+          }
+        }
+        if (!checkFile) {
+          for (let child of path.get('body')) {
+            if (maybeSkipFile(child, opts)) {
+              return;
+            }
           }
         }
         const inspect = path.scope.generateUidIdentifier('inspect');
@@ -3243,6 +3252,15 @@ export default function ({types: t, template}): Object {
     }
   }
 
+  /**
+   * Determine whether the file should be checked
+   */
+  function mustCheckFile(path: NodePath, opts): boolean {
+    if (path.node.leadingComments && path.node.leadingComments.length) {
+      return opts.only && !skipEnvironment(path.node.leadingComments, opts);
+    }
+    return false;
+  }
   /**
    * Determine whether the file should be skipped, based on the comments attached to the given node.
    */
