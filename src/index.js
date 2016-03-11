@@ -166,7 +166,7 @@ export default function ({types: t, template}): Object {
       var prop = props[name];
       if(!check) {
         return new Error(
-          "Invalid prop \`" + name + "\` supplied to \`" + component 
+          "Invalid prop \`" + name + "\` supplied to \`" + component
           + "\`.\\n\\nExpected:\\n" + expected + "\\n\\nGot:\\n" + got + "\\n\\n"
         );
       }
@@ -3244,7 +3244,7 @@ export default function ({types: t, template}): Object {
    */
   function mustCheckFile(path: NodePath, opts): boolean {
     if (path.node.leadingComments && path.node.leadingComments.length) {
-      return !skipEnvironment(path.node.leadingComments, opts);
+      return opts.only && !skipEnvironment(path.node.leadingComments, opts);
     }
     return false;
   }
