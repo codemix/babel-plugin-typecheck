@@ -51,8 +51,7 @@ describe('Typecheck', function () {
     Value of variable "k" violates contract.
 
     Expected:
-    { captureTime: number
-    }
+    BasicSeq
 
     Got:
     { x: number;
@@ -74,9 +73,7 @@ describe('Typecheck', function () {
     Function "demo" return value violates contract.
 
     Expected:
-    {
-      [key: string]: string | number
-    }
+    Thing
 
     Got:
     {
@@ -92,10 +89,7 @@ describe('Typecheck', function () {
     Function "demo" return value violates contract.
 
     Expected:
-    { bool: bool;
-      bools: bool[];
-      [key: string]: string | number;
-    }
+    Thing
 
     Got:
     {
@@ -606,7 +600,7 @@ describe('Typecheck', function () {
     Value of "user.location.country" violates contract.
 
     Expected:
-    "GB" | "US" | "FR" | "CA"
+    CountryCode
 
     Got:
     string`, 'class-properties-complex', 'sally', 'bob@example.com', {
@@ -622,7 +616,7 @@ describe('Typecheck', function () {
     Value of "user.location.country" violates contract.
 
     Expected:
-    "GB" | "US" | "FR" | "CA"
+    CountryCode
 
     Got:
     boolean`, 'class-properties-complex', 'sally', 'bob@example.com', {
@@ -690,7 +684,7 @@ describe('Typecheck', function () {
     Value of argument "input" violates contract.
 
     Expected:
-    "active" | "inactive"
+    status
 
     Got:
     string`, 'enum', 'pending');
