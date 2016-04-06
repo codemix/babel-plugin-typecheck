@@ -1056,14 +1056,17 @@ export default function ({types: t, template}): Object {
     switch (a.type) {
       case 'StringTypeAnnotation':
         return maybeStringAnnotation(b);
+      case 'StringLiteral':
       case 'StringLiteralTypeAnnotation':
         return compareStringLiteralAnnotations(a, b);
       case 'NumberTypeAnnotation':
         return maybeNumberAnnotation(b);
+      case 'NumericLiteral':
       case 'NumericLiteralTypeAnnotation':
         return compareNumericLiteralAnnotations(a, b);
       case 'BooleanTypeAnnotation':
         return maybeBooleanAnnotation(b);
+      case 'BooleanLiteral':
       case 'BooleanLiteralTypeAnnotation':
         return compareBooleanLiteralAnnotations(a, b);
       case 'FunctionTypeAnnotation':
@@ -1092,7 +1095,7 @@ export default function ({types: t, template}): Object {
   }
 
   function compareStringLiteralAnnotations (a: StringLiteralTypeAnnotation, b: TypeAnnotation): ?boolean {
-    if (b.type === 'StringLiteralTypeAnnotation') {
+    if (b.type === 'StringLiteralTypeAnnotation' || b.type === 'StringLiteral') {
       return a.value === b.value;
     }
     else {
@@ -1101,7 +1104,7 @@ export default function ({types: t, template}): Object {
   }
 
   function compareBooleanLiteralAnnotations (a: BooleanLiteralTypeAnnotation, b: TypeAnnotation): ?boolean {
-    if (b.type === 'BooleanLiteralTypeAnnotation') {
+    if (b.type === 'BooleanLiteralTypeAnnotation' || b.type === 'BooleanLiteral') {
       return a.value === b.value;
     }
     else {
@@ -1110,7 +1113,7 @@ export default function ({types: t, template}): Object {
   }
 
   function compareNumericLiteralAnnotations (a: NumericLiteralTypeAnnotation, b: TypeAnnotation): ?boolean {
-    if (b.type === 'NumericLiteralTypeAnnotation') {
+    if (b.type === 'NumericLiteralTypeAnnotation' || b.type === 'NumericLiteral') {
       return a.value === b.value;
     }
     else {
@@ -1999,7 +2002,15 @@ export default function ({types: t, template}): Object {
     let annotation = node.typeAnnotation || node.savedTypeAnnotation;
     if (!annotation) {
       if (node.value) {
-        annotation = node.value.typeAnnotation || node.value.savedTypeAnnotation || t.anyTypeAnnotation();
+        if(node.value.typeAnnotation || node.value.savedTypeAnnotation) {
+          annotation = node.value.typeAnnotation || node.value.savedTypeAnnotation;
+        }
+        else if (node.value.type === 'BooleanLiteral' || node.value.type === 'NumericLiteral' || node.value.type === 'StringLiteral') {
+          annotation = t[node.value.type](node.value.value)
+        }
+        else {
+          annotation = t.anyTypeAnnotation()
+        }
       }
       else {
         annotation = t.anyTypeAnnotation();
@@ -2348,6 +2359,7 @@ export default function ({types: t, template}): Object {
         return maybeNumberAnnotation(annotation.typeAnnotation);
       case 'NumberTypeAnnotation':
       case 'NumericLiteralTypeAnnotation':
+      case 'NumericLiteral':
         return true;
       case 'GenericTypeAnnotation':
         switch (annotation.id.name) {
@@ -2384,6 +2396,7 @@ export default function ({types: t, template}): Object {
       case 'NullableTypeAnnotation':
         return maybeStringAnnotation(annotation.typeAnnotation);
       case 'StringTypeAnnotation':
+      case 'StringLiteral':
         return true;
       case 'StringLiteralTypeAnnotation':
         return null;
@@ -2490,6 +2503,7 @@ export default function ({types: t, template}): Object {
         return maybeBooleanAnnotation(annotation.typeAnnotation);
       case 'BooleanTypeAnnotation':
       case 'BooleanLiteralTypeAnnotation':
+      case 'BooleanLiteral':
         return true;
       case 'GenericTypeAnnotation':
         switch (annotation.id.name) {
