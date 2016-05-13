@@ -219,11 +219,9 @@ export default function ({types: t, template}): Object {
       }
       const {node, scope} = path;
       if (node.declaration && node.declaration.type === 'TypeAlias') {
-        path.replaceWith(t.exportNamedDeclaration(
-          createTypeAliasChecks(path.get('declaration')),
-          [],
-          null
-        ));
+        const declaration = path.get('declaration');
+        declaration.replaceWith(createTypeAliasChecks(declaration));
+        node.exportKind = 'value';
       }
     },
 
@@ -668,7 +666,7 @@ export default function ({types: t, template}): Object {
         if (t.isClassProperty(classMember)) {
           if (classMember.key.name === 'propTypes' && classMember.static) {
             return;
-          } 
+          }
           else if (classMember.key.name === 'props' && !classMember.static) {
             props = memberPath;
           }
@@ -717,7 +715,7 @@ export default function ({types: t, template}): Object {
         const property = t.classProperty(t.identifier('propTypes'), propTypes);
         property.static = true;
         props.insertAfter(property);
-      } 
+      }
       else {
         const root:NodePath = path.parentPath.isExportDeclaration() ? path.parentPath : path;
         root.insertAfter(
@@ -732,6 +730,43 @@ export default function ({types: t, template}): Object {
       }
     }
   };
+
+  /**
+   * Collect all the type declarations in the given path and add references to them for retreival later.
+   */
+  function collectTypes (path: NodePath): void {
+    path.traverse({
+      InterfaceDeclaration (path: NodePath) {
+        path.scope.setData(`typechecker:${path.node.id.name}`, path);
+      },
+      TypeAlias (path: NodePath) {
+        path.scope.setData(`typechecker:${path.node.id.name}`, path);
+      },
+      ImportDeclaration (path: NodePath) {
+        if (path.node.importKind !== 'type') {
+          return;
+        }
+        path.get('specifiers')
+        .forEach(specifier => {
+          const local = specifier.get('local');
+          if (local.isIdentifier()) {
+            path.scope.setData(`typechecker:${local.node.name}`, specifier);
+          }
+          else {
+            path.scope.setData(`typechecker:${local.node.id.name}`, specifier);
+          }
+        });
+      },
+      "Function|Class" (path: NodePath) {
+        const node = path.node;
+        if (node.typeParameters && node.typeParameters.params) {
+          path.get('typeParameters').get('params').forEach(typeParam => {
+            path.get('body').scope.setData(`typeparam:${typeParam.node.name}`, typeParam);
+          });
+        }
+      }
+    });
+  }
 
   return {
     visitor: {
@@ -753,6 +788,7 @@ export default function ({types: t, template}): Object {
             }
           }
         }
+        collectTypes(path);
         const inspect = path.scope.generateUidIdentifier('inspect');
         const requiresHelpers = {
           inspect: false
@@ -2239,6 +2275,9 @@ export default function ({types: t, template}): Object {
         if (typeChecker) {
           annotation = getAnnotation(typeChecker);
         }
+        else if (isPolymorphicType(annotation.id, path.scope)) {
+          annotation = t.anyTypeAnnotation();
+        }
         else {
           const binding = path.scope.getBinding(annotation.id.name);
           if (binding) {
@@ -2299,6 +2338,9 @@ export default function ({types: t, template}): Object {
 
   function getFunctionForIdentifier (path: NodePath): boolean|Node {
     if (path.type !== 'Identifier') {
+      return false;
+    }
+    else if (isTypeChecker(path.node, path.scope) || isPolymorphicType(path.node, path.scope)) {
       return false;
     }
     const ref = path.scope.getBinding(path.node.name);
@@ -2896,84 +2938,26 @@ export default function ({types: t, template}): Object {
   }
 
   function getTypeChecker (id: Identifier|QualifiedTypeIdentifier, scope: Scope): NodePath|false {
-    const binding = scope.getBinding(id.name);
-    if (binding === undefined) {
-      return false;
-    }
-    const {path} = binding;
-    if (path == null) {
-      return false;
-    }
-    else if (path.type === 'TypeAlias') {
-      return path;
-    }
-    else if (path.type === 'VariableDeclaration' && path.node.isTypeChecker) {
-      return path.get('declarations')[0];
-    }
-    else if (path.isImportSpecifier() && path.parent.importKind === 'type') {
-      return path;
+    const checker = scope.getData(`typechecker:${id.name}`);
+    if (checker) {
+      return checker;
     }
     return false;
   }
 
   function isTypeChecker (id: Identifier|QualifiedTypeIdentifier, scope: Scope): boolean {
-    const binding = scope.getBinding(id.name);
-    if (binding === undefined) {
-      return false;
-    }
-    const {path} = binding;
-    if (path == null) {
-      return false;
-    }
-    else if (path.type === 'TypeAlias' || (path.type === 'VariableDeclaration' && path.node.isTypeChecker)) {
-      return true;
-    }
-    else if (path.isImportSpecifier() && path.parent.importKind === 'type') {
-      return true;
-    }
-    return false;
+    return scope.getData(`typechecker:${id.name}`) !== undefined;
   }
 
   function isPolymorphicType (id: Identifier|QualifiedTypeIdentifier, scope: Scope): boolean {
-    const binding = scope.getBinding(id.name);
-    if (binding !== undefined) {
-      return false;
-    }
-    let {path} = scope;
-    while (path && path.type !== 'Program') {
-      const {node} = path;
-      if ((t.isFunction(node) || t.isClass(node)) && node.typeParameters) {
-        for (let param of node.typeParameters.params) {
-          param.isPolymorphicType = true;
-          if (param.name === id.name) {
-            return true;
-          }
-        }
-      }
-      path = path.parentPath;
-    }
-    return false;
+    return scope.getData(`typeparam:${id.name}`) !== undefined;
   }
 
   function getPolymorphicType (id: Identifier|QualifiedTypeIdentifier, scope: Scope): ?Node {
-    const binding = scope.getBinding(id.name);
-    if (binding !== undefined) {
-      return false;
+    const path = scope.getData(`typeparam:${id.name}`);
+    if (path) {
+      return path.node;
     }
-    let {path} = scope;
-    while (path && path.type !== 'Program') {
-      const {node} = path;
-      if (t.isFunction(node) && node.typeParameters) {
-        for (let param of node.typeParameters.params) {
-          param.isPolymorphicType = true;
-          if (param.name === id.name) {
-            return param;
-          }
-        }
-      }
-      path = path.parent;
-    }
-    return null;
   }
 
   function collectParamChecks (path: NodePath, context: VisitorContext): Node[] {
@@ -3165,7 +3149,7 @@ export default function ({types: t, template}): Object {
       return t.functionExpression(null, [], t.blockStatement([]));
     }
   }
-  
+
   /**
    * Determine whether the given node can produce purely boolean results.
    */
